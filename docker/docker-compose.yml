@@ -19,9 +19,9 @@
 #   用具名卷 backend-data（原因见 backend.volumes 注释）。docker compose down 均不丢
 #   数据；删 docker/volumes 或 `down -v` 即清空重来。
 
-# 项目名：决定 compose 分组、容器网络名（walnut-seed-python_default）与具名卷前缀。
+# 项目名：决定 compose 分组、容器网络名（walnut-seed-fastapi_default）与具名卷前缀。
 # 注意：修改此值会让 compose 视为新项目，旧卷不会被自动沿用。
-name: walnut-seed-python
+name: walnut-seed-fastapi
 
 # 中间件服务（mysql/redis/seaweedfs）定义复用，改端口/健康检查只需改中间件编排一份
 include:
@@ -51,7 +51,7 @@ services:
       DATABASE_PORT: "3306"
       DATABASE_USER: root
       DATABASE_PASSWORD: ${DB_PASSWORD:-walnut123}
-      DATABASE_NAME: ${DB_NAME:-walnut_seed_python}
+      DATABASE_NAME: ${DB_NAME:-walnut_seed_fastapi}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ""

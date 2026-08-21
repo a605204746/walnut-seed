@@ -1,4 +1,4 @@
-# WalnutSeed
+# Walnut-Seed-Fastapi
 
 [English](./README.en.md) | **简体中文**
 
@@ -39,7 +39,7 @@
 ## 目录结构
 
 ```
-walnut-seed-python/
+walnut-seed-fastapi/
   walnut-backend/    # Python 后端（FastAPI + SQLAlchemy 2.0 异步 + Redis）
   walnut-frontend/   # Vue3 前端 monorepo（pnpm + turbo），主应用位于 apps/web-antd/
   docker/            # compose 编排与容器配置
@@ -94,8 +94,8 @@ walnut-backend/
 ## 快速开始
 
 ```bash
-git clone https://gitee.com/shendudian/walnut-seed-python.git
-cd walnut-seed-python
+git clone https://gitee.com/shendudian/walnut-seed-fastapi.git
+cd walnut-seed-fastapi
 ```
 
 前置：Docker Desktop（含 compose）；本机原生开发另需 `uv`（Python 3.12）、Node.js `^22.18.0 || ^24.0.0` 与 pnpm 11。
@@ -104,7 +104,7 @@ cd walnut-seed-python
 
 中间件（MySQL/Redis/SeaweedFS）跑在 Docker，后端/前端在本机原生运行（热重载最流畅、好调试）。
 
-先启动中间件（MySQL localhost:3307，root/walnut123，库 walnut_seed_python；Redis localhost:6380；SeaweedFS S3 API localhost:8333，filer UI `http://localhost:8888`）：
+先启动中间件（MySQL localhost:3307，root/walnut123，库 walnut_seed_fastapi；Redis localhost:6380；SeaweedFS S3 API localhost:8333，filer UI `http://localhost:8888`）：
 
 ```bash
 docker compose -f docker/docker-compose.middleware.yml up -d

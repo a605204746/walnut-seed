@@ -1,4 +1,4 @@
-# WalnutSeed
+# Walnut-Seed-Fastapi
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.138-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -13,7 +13,7 @@ A modern full-stack application scaffold for building admin/back-office systems 
 **FastAPI (Python 3.12)** backend + **Vue 3 (Vben 5 / Ant Design Vue Next)** frontend.
 
 ```
-Gitee: https://gitee.com/shendudian/walnut-seed-python
+Gitee: https://gitee.com/shendudian/walnut-seed-fastapi
 ```
 
 ## Features
@@ -51,7 +51,7 @@ Start here if you are building on top of the scaffold.
 ## Project Structure
 
 ```
-walnut-seed-python/
+walnut-seed-fastapi/
   walnut-backend/    # Python backend (FastAPI + SQLAlchemy 2.0 async + Redis)
   walnut-frontend/   # Vue 3 frontend monorepo (pnpm + turbo), main app in apps/web-antd/
   docker/            # Compose stacks and container configuration
@@ -106,8 +106,8 @@ Logs are written to `data/logs/` at the repository root (`walnut-seed.log`, dail
 ## Getting Started
 
 ```bash
-git clone https://gitee.com/shendudian/walnut-seed-python.git
-cd walnut-seed-python
+git clone https://gitee.com/shendudian/walnut-seed-fastapi.git
+cd walnut-seed-fastapi
 ```
 
 Prerequisites: Docker Desktop (with Compose); for native development also `uv` (Python 3.12), Node.js `^22.18.0 || ^24.0.0` and pnpm 11.
@@ -116,7 +116,7 @@ Prerequisites: Docker Desktop (with Compose); for native development also `uv` (
 
 Middleware (MySQL / Redis / SeaweedFS) runs in Docker; backend and frontend run natively on your machine (smoothest hot reload, easiest debugging).
 
-Start the middleware first (MySQL `localhost:3307`, `root/walnut123`, database `walnut_seed_python`; Redis `localhost:6380`; SeaweedFS S3 API `localhost:8333`, filer UI `http://localhost:8888`):
+Start the middleware first (MySQL `localhost:3307`, `root/walnut123`, database `walnut_seed_fastapi`; Redis `localhost:6380`; SeaweedFS S3 API `localhost:8333`, filer UI `http://localhost:8888`):
 
 ```bash
 docker compose -f docker/docker-compose.middleware.yml up -d

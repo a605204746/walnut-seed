@@ -12,7 +12,7 @@
 # - 数据持久化在本目录 volumes/ 下（与全栈编排共用，服务名/容器名一致，可平滑切换）。
 # - 后端启动即连库执行 Alembic 迁移并播种、无重试，请等 MySQL healthy 后再启动后端。
 
-name: walnut-seed-python
+name: walnut-seed-fastapi
 
 services:
   mysql:
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-walnut123}
-      MYSQL_DATABASE: ${DB_NAME:-walnut_seed_python}
+      MYSQL_DATABASE: ${DB_NAME:-walnut_seed_fastapi}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci

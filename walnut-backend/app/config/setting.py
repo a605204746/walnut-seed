@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     DATABASE_PORT: int = 3306
     DATABASE_USER: str = "root"
     DATABASE_PASSWORD: str = ""
-    DATABASE_NAME: str = "walnut_seed_python"
+    DATABASE_NAME: str = "walnut_seed_fastapi"
     # 启动时自动执行 Alembic 迁移（upgrade head）：dev 在 .env.dev 置 True；
     # prod 保持 False，由 docker-entrypoint 在应用启动前显式迁移（多副本部署无竞争）
     DATABASE_AUTO_MIGRATE: bool = False

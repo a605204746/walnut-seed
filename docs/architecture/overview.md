@@ -9,7 +9,7 @@
 ### 1.1 仓库三大块
 
 ```
-walnut-seed-python/
+walnut-seed-fastapi/
   walnut-backend/    # FastAPI 后端（本文主角）
   walnut-frontend/   # Vue3 monorepo（pnpm + turbo），主应用 apps/web-antd/
   docker/            # 两套 compose 编排 + nginx 配置（见部署文档）

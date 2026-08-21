@@ -17,7 +17,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ```yaml
 # docker/docker-compose.yml（全栈）
-name: walnut-seed-python
+name: walnut-seed-fastapi
 include:
   - docker-compose.middleware.yml    # 复用 mysql/redis/seaweedfs 定义
 ```
@@ -27,7 +27,7 @@ include:
 | `docker-compose.yml` | 生产/全栈 | mysql + redis + seaweedfs + **backend + frontend** |
 | `docker-compose.middleware.yml` | 仅中间件（应用本机跑） | mysql + redis + seaweedfs |
 
-**为什么不能同时跑**：两份编排项目名相同（`walnut-seed-python`），中间件的 `container_name`（walnut-mysql / walnut-redis / walnut-seaweedfs）与宿主机端口映射完全一致，同时起必然冲突。反过来，正因容器名和数据卷一致，两种形态**互切不丢数据**。
+**为什么不能同时跑**：两份编排项目名相同（`walnut-seed-fastapi`），中间件的 `container_name`（walnut-mysql / walnut-redis / walnut-seaweedfs）与宿主机端口映射完全一致，同时起必然冲突。反过来，正因容器名和数据卷一致，两种形态**互切不丢数据**。
 
 ### 1.1 全栈编排的服务与端口
 
@@ -87,7 +87,7 @@ nginx 配置经 `additional_contexts` 注入：compose 里 `additional_contexts:
 |---|---|---|
 | `JWT_SECRET_KEY` | **`${VAR:?}` 强制** | 缺失/为空直接启动失败；须 ≥32 字节，生成命令见 `.env.example` |
 | `DB_PASSWORD` | `${VAR:-walnut123}` 兜底 | mysql root 密码与后端 `DATABASE_PASSWORD` 共用 |
-| `DB_NAME` | `${VAR:-walnut_seed_python}` | 建库名 + 后端连接库名 |
+| `DB_NAME` | `${VAR:-walnut_seed_fastapi}` | 建库名 + 后端连接库名 |
 | `BACKEND_PORT` | `${VAR:-8011}` | 后端监听 + nginx upstream + healthcheck 共用 |
 | `OSS_ACCESS_KEY` / `OSS_SECRET_KEY` | `${VAR:-walnut}` / `${VAR:-walnut123}` | SeaweedFS S3 凭据 |
 
@@ -128,5 +128,5 @@ nginx 配置经 `additional_contexts` 注入：compose 里 `additional_contexts:
 注意：
 
 - `down` 删容器与网络，但中间件数据（绑定挂载）与后端数据（具名卷 `backend-data`）都保留；`down -v` 只删具名卷，要清中间件数据需手动删 `docker/volumes/`。
-- 项目名 `walnut-seed-python` 决定网络名与具名卷前缀（`walnut-seed-python_backend-data`）；**修改项目名会被视为新项目，旧卷不被沿用**。
+- 项目名 `walnut-seed-fastapi` 决定网络名与具名卷前缀（`walnut-seed-fastapi_backend-data`）；**修改项目名会被视为新项目，旧卷不被沿用**。
 - 重启 backend 会重跑 entrypoint 迁移——已在 head 时为空操作，幂等安全。
