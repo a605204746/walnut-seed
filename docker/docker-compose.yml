@@ -1,0 +1,112 @@
+# WalnutSeed 全栈/生产编排：中间件(include 复用) + 后端 + 前端(nginx)
+# （只起中间件供本机开发见 docker-compose.middleware.yml）
+#
+# 启动：docker compose -f docker/docker-compose.yml up -d --build
+# 访问：http://localhost:8010   账号 admin / admin123
+# 停止：docker compose -f docker/docker-compose.yml down
+# （中间件数据在 docker/volumes，后端数据在具名卷 backend-data；down 均不丢数据，
+#  删 docker/volumes 或加 -v 才清空）
+#
+# 说明：
+# - mysql/redis/seaweedfs 三个中间件服务统一定义在 docker-compose.middleware.yml，
+#   本文件经 include 引入，两份编排共用（容器名/volumes 一致，不能同时起）。
+# - 仅前端暴露宿主机端口（8010），MySQL/Redis/后端在内部网络互通；
+#   中间件如需宿主机访问，端口映射见 middleware 编排（3307/6380/8333/8888）。
+# - 密码/密钥/端口等共用值经 docker/.env 变量插值统一注入（模板见 .env.example）。
+#   JWT_SECRET_KEY 为强制项（${VAR:?...}，缺失或留空直接启动失败，杜绝静默使用
+#   编排内固定密钥）；其余变量未设置时以 ${VAR:-默认值} 兜底，开箱即用。
+# - 数据持久化：中间件在本目录 volumes/ 下（绑定挂载）；后端运行时产物（日志/上传）
+#   用具名卷 backend-data（原因见 backend.volumes 注释）。docker compose down 均不丢
+#   数据；删 docker/volumes 或 `down -v` 即清空重来。
+
+# 项目名：决定 compose 分组、容器网络名（walnut-seed-python_default）与具名卷前缀。
+# 注意：修改此值会让 compose 视为新项目，旧卷不会被自动沿用。
+name: walnut-seed-python
+
+# 中间件服务（mysql/redis/seaweedfs）定义复用，改端口/健康检查只需改中间件编排一份
+include:
+  - docker-compose.middleware.yml
+
+services:
+  backend:
+    build: ../walnut-backend
+    container_name: walnut-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      # 真实环境变量优先于 env 文件；镜像未打包 env/，配置全走这里
+      ENVIRONMENT: prod
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "${BACKEND_PORT:-8011}"
+      DEBUG: "False"
+      LOGGER_LEVEL: INFO
+      DATABASE_ECHO: "False"
+      DATABASE_HOST: mysql
+      DATABASE_PORT: "3306"
+      DATABASE_USER: root
+      DATABASE_PASSWORD: ${DB_PASSWORD:-walnut123}
+      DATABASE_NAME: ${DB_NAME:-walnut_seed_python}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      # JWT 签名密钥：:? 表示缺失或为空时 compose 直接报错退出，禁止静默兜底。
+      # 请在 docker/.env 中设置（生成命令见 .env.example）；切勿依赖任何默认密钥。
+      SECRET_KEY: ${JWT_SECRET_KEY:?请在 docker/.env 中设置 JWT_SECRET_KEY（生成命令见 .env.example）}
+      # 对象存储：容器网络内走服务名 seaweedfs:8333；url 前缀为中性 /upload，由 nginx 转发到后端
+      OSS_TYPE: s3
+      OSS_S3_ENDPOINT: seaweedfs:8333
+      OSS_S3_ACCESS_KEY: ${OSS_ACCESS_KEY:-walnut}
+      OSS_S3_SECRET_KEY: ${OSS_SECRET_KEY:-walnut123}
+      OSS_S3_BUCKET_NAME: walnut-seed
+      OSS_S3_URL_PREFIX: /upload
+    healthcheck:
+      # python slim 镜像无 curl/wget，用标准库 urllib 探测。
+      # /common/health/check 为存活式探针（不依赖 DB/Redis），就绪探针是 /common/health/ready。
+      # SERVER_PORT 与上方 environment 的插值保持一致。
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:${BACKEND_PORT:-8011}/common/health/check')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # 入口脚本先跑 Alembic 迁移再启动应用，首次启动留足时间
+      start_period: 60s
+    volumes:
+      # 运行时产物（日志/上传）：容器内 /data（后端代码写入仓库根的上级 data/，容器内即 /data）。
+      # 用具名卷而非 ./volumes/backend 绑定挂载：容器以非 root 用户 appuser 运行，
+      # 绑定挂载目录在 Linux 上由 compose 以 root 创建，appuser 无写权限；
+      # 具名卷首次挂载时会继承镜像内 /data 的属主（Dockerfile 已 chown 给 appuser）。
+      - backend-data:/data
+
+  frontend:
+    build:
+      context: ../walnut-frontend
+      dockerfile: scripts/deploy/Dockerfile
+      additional_contexts:
+        deploy: .
+    container_name: walnut-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        # nginx 反代目标就绪后再启动，避免启动窗口内 /prod-api/ 全 502
+        condition: service_healthy
+    healthcheck:
+      # nginx 官方镜像自带 busybox wget，直接探测首页
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "${BACKEND_PORT:-8011}"
+    ports:
+      - "8010:80"
+
+volumes:
+  # 后端运行时数据（日志/上传），随 docker compose down 保留，down -v 才删除
+  backend-data:

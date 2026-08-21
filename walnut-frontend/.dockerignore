@@ -1,0 +1,10 @@
+# 注意：BuildKit 中裸模式（如 node_modules）只匹配构建上下文根目录下的条目，
+# 嵌套目录（如 apps/web-antd/node_modules）必须使用 **/ 前缀才能排除。
+# 若宿主机 node_modules 混入镜像，残留的 .bin shim 会指向错误的 .pnpm 路径导致构建失败。
+**/node_modules
+**/dist
+**/.turbo
+**/dist.zip
+.git
+.gitignore
+*.md

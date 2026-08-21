@@ -1,0 +1,83 @@
+# 生产上线清单
+
+> 更新日期：2026-08-19 · 适用版本：WalnutSeed v1.0
+> 简版三步清单见根目录 [README「首次部署清单」](../../README.md#首次部署清单)，本文是完整版：逐项说明**为什么**，并列出代码默认值不满足生产、需要人为拍板的项。
+
+## 0. 先看：启动门禁（不满足直接起不来）
+
+这些是代码层的 fail-fast 保护，配错了容器会直接启动失败——**报错是好事，别绕过**：
+
+| 门禁 | 触发条件 | 解除方式 |
+|---|---|---|
+| compose 变量强制 | `docker/.env` 未设置 `JWT_SECRET_KEY`（`${VAR:?}`） | 设置密钥 |
+| SECRET_KEY 校验 | prod 下为空 / 含 `change-me` / 长度 <32 字节 | 用随机值 |
+| RSA 密钥黑名单 | prod 配置了 RuoYi 生态公开的出厂密钥 | `scripts/gen_rsa_keys.py` 重新生成 |
+| 路由认证审计 | 白名单外路由漏挂认证依赖 | 补 `AuthPermission`（编程错误，dev 同样拦） |
+| Alembic 迁移 | entrypoint `set -e`，迁移失败即退出 | 修迁移脚本（见 [迁移实战](../guide/alembic-migration.md)） |
+| 雪花机器位 | `SNOWFLAKE_WORKER_ID` 越界（非 0–1023） | 配置合法值 |
+
+## 1. 密钥与账号（必改）
+
+- [ ] **`JWT_SECRET_KEY`**：`python -c "import secrets; print(secrets.token_hex(32))"` 生成，写入 `docker/.env`
+      ⚠️ 注意：`docker/.env.example` 里带了一个**示例密钥**，直接 `cp` 过来的 `.env` 若不改就是示例值（长度合规能启动，但已公开，必须换）
+- [ ] **初始账号改密**：种子数据随首次迁移入库，包含 `admin / admin123` 与 `test / 666666`（种子注释标注仅开发用途）——登录后立即改密，或删除/停用 test 账号
+- [ ] **`DB_PASSWORD`**：按需修改。注意**已有数据卷的 MySQL 密码不会因改此值而变**（`MYSQL_ROOT_PASSWORD` 只在首次初始化生效），需进库 `ALTER USER` 同步
+- [ ] **接口加解密 RSA 密钥**：生产用 `uv run python scripts/gen_rsa_keys.py` 生成**两对**密钥，按 [接口加解密配置](../guide/api-encryption.md) 的配对关系分别填前后端；前端需重新构建镜像（密钥构建期注入）
+- [ ] **SeaweedFS 凭据**：编排默认 `walnut/walnut123` 弱凭据，且当前版本 S3 网关静态身份不生效（上游 #4728/#8331）——真正的防线是**不暴露 8333/8888 到公网**（防火墙/安全组），凭据修改是辅助
+- [ ] **Redis 密码**：编排默认无密码（仅容器内网可达）；若网络拓扑有暴露风险，设置 `REDIS_PASSWORD` 并同步后端环境变量
+
+## 2. 网络与代理（必配）
+
+- [ ] **`TRUSTED_PROXY_IPS`**（后端环境变量）：反向代理部署**必须**按拓扑配置，否则：
+      - 限流、登录锁定全部按代理（nginx 容器）IP 计数——等于全站共享一个 IP，防护形同虚设；
+      - 审计日志记录的是代理地址而非真实客户端。
+      规则：仅当请求**直连地址**在此列表内才解析 `X-Forwarded-For` / `X-Real-IP`。示例：nginx 与后端同机 `["127.0.0.1","::1"]`；compose 网络下填 nginx 容器在 compose 子网内的地址（项目网络默认 `172.x` 段，可用 `docker inspect` 查）
+- [ ] **`PROD_CORS_ORIGINS`**：prod 必配。不配置时 CORS 为 `allow_origins=["*"]` + `allow_credentials=True`——任意站点可发起带凭证跨域请求。填前端实际域名（逗号分隔多个）
+- [ ] **`ALLOWED_HOSTS`**：默认 `["*"]`（prod 会挂 TrustedHost 中间件但不校验）。配置实际域名可防 Host 头注入
+- [ ] **HTTPS**：真实 TLS 部署时显式开启 `HTTPS_REDIRECT=True`（301 跳转，信任 `X-Forwarded-Proto`）；证书通常在 nginx/网关层终结。`docker/config/nginx.conf` 目前只监听 80，走 443 需自行扩展
+- [ ] **收敛端口暴露面**：全栈编排会把中间件端口映射到宿主机（MySQL 3307 / Redis 6380 / SeaweedFS 8333/8888，定义在 middleware 编排经 include 生效）。生产宿主机应在防火墙封禁这些端口，只放行前端 8010（或你的 80/443）
+- [ ] **API 文档评估**：`/docs`、`/redoc`、`/openapi.json` 在认证白名单内且**没有配置开关**，生产默认公开。如需下线，在 nginx 层 `location` 拦截（如返回 404），或从 `WHITE_API_LIST_PATH` 移除并自行调整 `register_docs`
+
+## 3. 数据与迁移
+
+- [ ] **迁移脚本随代码提交**：生产由 entrypoint 在应用启动前显式 `upgrade head`（多副本部署无竞争），确认本次发布的迁移脚本已全部入库
+- [ ] **备份**：MySQL 数据在 `docker/volumes/mysql`，纳入备份策略；具名卷 `backend-data`（日志/上传缓存）按需
+- [ ] **只读核对**：首次启动后 `docker logs walnut-backend` 应看到「Alembic 迁移已应用到 head / 数据库初始化完成」类日志，无异常堆栈
+
+## 4. 运行参数
+
+- [ ] **`SNOWFLAKE_WORKER_ID`**：**多 worker/多副本部署必须为每个实例显式配置互不相同的值**（0–1023）。不配置时回退 `(crc32(本机出口IP) + pid) & 1023`——容器重建换 IP、两副本 crc32 碰撞都会导致机器位重复，同一毫秒可能生成重复主键
+- [ ] **日志级别**：`LOGGER_LEVEL=INFO`、`DEBUG=False`、`DATABASE_ECHO=False`——compose 已覆盖这三项；**自行部署（不用 compose）时必须同样处理**，否则 DEBUG 级别 + 完整 SQL 打印会灌爆磁盘并泄漏数据
+- [ ] **会话策略核对**：token 有效期实际由 `sys_client` 表控制（pc 客户端种子值：30 分钟不活跃失效 + 7 天硬上限，滑动续期），配置项 `ACCESS_TOKEN_EXPIRE_SECONDS` 只是回退值。按产品需求核对该表数据
+- [ ] **注册开关**：用户注册由数据库动态配置 `sys.account.registerUser` 控制，默认无该键即关闭——确认是否需要开放
+
+## 5. 安全加固确认（默认已启用，核对即可）
+
+- [ ] **登录验证码**：`CAPTCHA_ENABLE=True`（默认开），math 算式型、2 位起（1 位答案空间仅 19 种，防不住暴力猜解）
+- [ ] **登录锁定**：5 次错误锁定 10 分钟，按「用户名 + IP」计数（防恶意锁定他人账号）；解锁可在「登录日志」页操作
+- [ ] **登录限流**：每 IP 10 次/分钟（`/auth/login`）；验证码 30 次/分钟
+- [ ] **密码复杂度**：≥8 位且同时含大小写字母、数字、特殊字符（`@$!%*?&`）；存储为 bcrypt
+- [ ] **文件上传**：扩展名白名单 + 10MB 限制 + 访问强制 `attachment`/`nosniff`。若业务需要新类型，改 `ALLOWED_EXTENSIONS` 时**勿放行 html/htm/svg 等可执行脚本/标记类**（存储型 XSS 面）
+- [ ] **XSS 过滤**：`XSS_ENABLED=True`，豁免路径默认 `["/system/notice"]`（富文本公告）；新增富文本接口记得加豁免，否则正文会被清洗
+- [ ] **接口加解密**：确认启动日志没有「已自动停用接口加解密」告警（有则说明密钥未配好，见 [加解密教程](../guide/api-encryption.md)）
+
+## 6. 上线后验证
+
+1. `docker compose -f docker/docker-compose.yml ps` —— 5 个服务全部 healthy
+2. 访问 `http://<域名>/`（或 `:8010`）能登录，改密后的新密码生效
+3. `GET /common/health/ready` 返回成功（DB + Redis 就绪探针）
+4. 后端日志无 ERROR 堆栈；操作日志页能看到登录记录
+5. 用错误密码连试 5 次，确认账号按预期锁定；超限访问触发限流提示
+6. （若配了 `PROD_CORS_ORIGINS`）用非白名单 Origin 发带凭证跨域请求，应被拒绝
+7. 按第 2 节的决定，确认 `/docs` 的暴露状态符合预期
+
+## 附：已定义但未接线的配置项
+
+以下配置项在 `setting.py` 中有定义但代码未消费，**配置了也不会生效**，避免在上面浪费时间：
+
+| 配置项 | 现状 |
+|---|---|
+| `OPERATION_LOG_RETENTION_DAYS` | 操作日志自动清理未接线（可手工在「操作日志」页清空） |
+| `REDIS_KEY_PREFIX` | 预留 |
+| `REDIS_DEFAULT_CACHE_TTL` | 预留 |
+| `WEBSOCKET_ALLOWED_ORIGINS` | 预留 |

@@ -1,0 +1,92 @@
+# ==================================================================
+# 仓库统一 .gitignore（子目录不再单独维护 .gitignore）
+# ==================================================================
+
+# ---------- 运行时数据 ----------
+# 日志 / 上传文件 / SQLite 数据库，统一存放于仓库根目录 data/
+# 锚定根目录，避免误伤源码中同名的 data 目录（如前端 views/**/data）
+/data/
+# Docker 编排数据目录（全栈与中间件共用 volumes/）
+docker/volumes*/
+
+# ---------- Python（walnut-backend） ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+# uv：保留 uv.lock 以便复现构建
+# 环境配置：.env.dev 为本地开发默认值（无真实密钥），随仓库提交；
+# .env.prod 含生产敏感信息，禁止提交
+walnut-backend/env/.env.prod
+
+# ---------- Node / 前端（walnut-frontend） ----------
+node_modules
+.pnpm-store
+dist
+dist-ssr
+dist.zip
+dist.tar
+dist.war
+*-dist.zip
+*-dist.tar
+*-dist.war
+.nitro
+.output
+coverage
+*.local
+**/.vitepress/cache
+.cache
+.turbo
+.temp
+dev-dist
+.stylelintcache
+.eslintcache
+yarn.lock
+package-lock.json
+**/backend-mock/data
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+vite.config.mts.*
+vite.config.mjs.*
+vite.config.js.*
+vite.config.ts.*
+datalog
+
+# ---------- 本地环境文件 ----------
+.env.local
+.env.*.local
+# Docker 编排变量插值（真实值；模板为 docker/.env.example，随仓库提交）
+docker/.env
+
+# ---------- IDE / 编辑器 ----------
+.idea/
+.vscode/
+.VSCodeCounter
+.history
+.cursor
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------- AI 工具 ----------
+.agent
+.agents
+.claude
+.codex
+.atomcode
+skills-lock.json
+
+# ---------- 其他 ----------
+.DS_Store
+.omx

@@ -1,0 +1,78 @@
+# WalnutSeed 中间件编排：MySQL + Redis + SeaweedFS（供开发环境使用，配置与 walnut-backend/env/.env.dev 对齐）
+#
+# 启动：docker compose -f docker/docker-compose.middleware.yml up -d
+# 停止：docker compose -f docker/docker-compose.middleware.yml down（删除 docker/volumes 即清空数据）
+#
+# 说明：
+# - 全栈/生产部署请用同目录 docker-compose.yml（本文件只起中间件）。
+# - 密码等共用值经 docker/.env 变量插值统一注入（与全栈编排共用同一组变量，
+#   模板见 .env.example；未创建时 ${VAR:-默认值} 兜底，开箱即用）。
+# - 中间件暴露宿主机端口：MySQL 3307 / Redis 6380 / SeaweedFS S3 API 8333 / filer UI 8888；
+#   均为非默认端口，一般不与宿主机自装的 MySQL/Redis（3306/6379）冲突；本机后端经 localhost 连接。
+# - 数据持久化在本目录 volumes/ 下（与全栈编排共用，服务名/容器名一致，可平滑切换）。
+# - 后端启动即连库执行 Alembic 迁移并播种、无重试，请等 MySQL healthy 后再启动后端。
+
+name: walnut-seed-python
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: walnut-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-walnut123}
+      MYSQL_DATABASE: ${DB_NAME:-walnut_seed_python}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./volumes/mysql:/var/lib/mysql
+    healthcheck:
+      # 必须用 127.0.0.1(走TCP)而不是 localhost(走socket)：
+      # mysql镜像首次初始化时临时mysqld开启 --skip-networking，
+      # socket ping会提前通过但TCP未就绪，导致后端先于数据库就绪而启动
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_PASSWORD:-walnut123}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: walnut-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./volumes/redis:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  seaweedfs:
+    # 固定版本，不用 latest：避免上游静默变更（含不兼容/行为变化）导致部署不可复现。
+    # 4.41 为 2026-08-06 发布的稳定版（Docker Hub 已确认 tag 存在）；2026-05 的
+    # VolumeServer SSRF 漏洞（GHSA-87fv-vqqr-m4jr）已在 4.24 修复，本版本不受影响。
+    # 发布说明：https://github.com/seaweedfs/seaweedfs/releases
+    # 升级前先验证 S3 网关行为（见下方 command 注释），勿盲升。
+    image: chrislusf/seaweedfs:4.41
+    container_name: walnut-seaweedfs
+    restart: unless-stopped
+    # 单容器 all-in-one：master + volume + filer + S3 网关。
+    # 注意：当前版本静态 -s3.config 身份不生效（上游 #4728/#8331），网关默认信任访问者，
+    # 仅暴露在内网/宿主机调试端口；如需严格鉴权请置于防火墙/代理之后或锁旧版本。
+    command: [ "server", "-s3", "-dir=/data", "-ip.bind=0.0.0.0" ]
+    ports:
+      - "8333:8333"   # S3 API（后端走内部网络，此映射供宿主机调试）
+      - "8888:8888"   # filer UI（相当于控制台）
+    volumes:
+      - ./volumes/seaweedfs:/data
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8888/" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20

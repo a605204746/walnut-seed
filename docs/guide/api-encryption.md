@@ -1,0 +1,161 @@
+# 接口加解密配置
+
+> 更新日期：2026-08-19 · 适用版本：WalnutSeed v1.0
+
+接口请求/响应体加解密（RSA + AES 混合）用于保护敏感数据（如密码）在传输中不以明文出现。本文讲清原理、密钥生成、前后端配对，以及联调排查。
+
+> 先划清边界：本文讲的是**接口传输加解密**（`API_DECRYPT_*`）。配置里另有一组 `FIELD_ENCRYPT_*` 是**字段入库加密**，两套体系互不相干，别混淆。
+
+## 1. 工作原理
+
+核心在 `app/core/encrypt.py`（基于 `cryptography`）+ `app/core/middlewares.py` 的 `ApiDecryptMiddleware`（纯 ASGI 中间件）。
+
+### 1.1 混合加密模型
+
+一句话：**RSA 包裹一次性随机 AES 密钥，AES 加解密 JSON 体**。
+
+- RSA 非对称（慢、有长度限制）只用来传递会话密钥；
+- AES/ECB/PKCS7 对称（快）加解密真正的报文；
+- 每个请求生成独立的 32 位随机 AES 密钥（`random_string`），用后即弃。
+
+RSA 长数据自动分段（加密块 `key_size//8 - 11`、解密块 `key_size//8`），密钥统一为 **Base64 编码的 DER**（公钥 SubjectPublicKeyInfo、私钥 PKCS8）。
+
+### 1.2 请求方向（前端加密 → 后端解密）
+
+```
+前端：randomStr(32) 生成 AES 密钥
+      ├─ AES 加密请求体
+      └─ RSA(公钥) 加密「Base64(AES密钥)」→ 放入 encrypt-key 请求头
+        ▼
+后端 ApiDecryptMiddleware：
+      RSA(API_DECRYPT_PRIVATE_KEY) 解出 AES 密钥 → AES 解密 body
+      → 业务路由拿到的是明文（端点本身无感知）
+```
+
+触发条件只有两个：**方法是 POST/PUT** + **带 `encrypt-key` 请求头**——被动触发，无需装饰器。解密失败时中间件直接短路返回（`400 请求解密失败` / `403 没有访问权限`）。
+
+### 1.3 响应方向（后端加密 → 前端解密）
+
+与请求相反，响应加密是**主动声明**的：需给端点加 `@api_encrypt(response=True)` 装饰器才会加密响应。
+
+```
+后端：random_string(32) 生成 AES 密钥
+      ├─ AES 加密响应体
+      └─ RSA(API_DECRYPT_PUBLIC_KEY) 加密 AES 密钥 → 写回 encrypt-key 响应头
+        ▼
+前端：检测到响应头有 encrypt-key
+      → RSA(VITE_GLOB_RSA_PRIVATE_KEY) 解出 AES 密钥 → AES 解密 body
+```
+
+> ⚠️ **当前仓库没有任何端点启用响应加密**（`@api_encrypt(response=True)` 只有定义、无使用处）。现有加密流量全部是**单向请求加密**。响应加密是"就绪但未启用"的能力。
+
+### 1.4 中间件位置（为什么日志里是明文）
+
+中间件从外到内执行顺序：`HTTPSRedirect → TrustedHost → CORS → Locale → ApiDecrypt → XSS → RequestLog → GZip → CorrelationId → 业务路由`。
+
+即**加解密发生在 XSS 过滤和请求日志之前**——请求日志记录的是**解密后**的参数（`RequestLogMiddleware` 会按 `SystemConstants.EXCLUDE_PROPERTIES` 剔除 password 等敏感字段）。
+
+## 2. 两对密钥的配对模型（关键，最易配错）
+
+请求和响应**各用一对独立密钥，必须是不同的两对**：
+
+```
+请求方向：前端 VITE_GLOB_RSA_PUBLIC_KEY ─加密─▶ 后端 API_DECRYPT_PRIVATE_KEY ─解密
+响应方向：后端 API_DECRYPT_PUBLIC_KEY  ─加密─▶ 前端 VITE_GLOB_RSA_PRIVATE_KEY ─解密
+```
+
+也就是说，**后端持有 2 个 key**：解请求的私钥（`API_DECRYPT_PRIVATE_KEY`）+ 加响应的公钥（`API_DECRYPT_PUBLIC_KEY`）。前端则持有对应的请求公钥和响应私钥。
+
+记忆口诀：**谁的私钥解，谁的公钥加**。请求由后端解 → 后端配私钥；响应由后端加 → 后端配公钥。
+
+## 3. 生成密钥
+
+```bash
+cd walnut-backend
+uv run python scripts/gen_rsa_keys.py            # 默认 1024 位（jsencrypt 兼容上限）
+uv run python scripts/gen_rsa_keys.py --bits 2048
+```
+
+脚本一次生成**两对**密钥，并直接打印成可粘贴的配置行：
+
+```
+===== 请求加密对（前端加密请求 → 后端解密请求） =====
+前端 VITE_GLOB_RSA_PUBLIC_KEY=...
+后端 API_DECRYPT_PRIVATE_KEY=...
+===== 响应加密对（后端加密响应 → 前端解密响应） =====
+后端 API_DECRYPT_PUBLIC_KEY=...
+前端 VITE_GLOB_RSA_PRIVATE_KEY=...
+```
+
+照着打印结果分别填到前后端即可，**请求对与响应对务必用不同的密钥对**。
+
+> `scripts/gen_secret_key.py` 生成的是 JWT 签名密钥 `SECRET_KEY`，与接口加解密无关，别混用。
+
+## 4. 后端配置
+
+配置项在 `app/config/setting.py`，通过 `walnut-backend/env/.env.dev` / `.env.example` 覆盖：
+
+```properties
+# env/.env.example 的「接口加解密」段
+# RSA 密钥对留空则启动时自动停用接口加解密（降级为明文）；
+# 生产环境用 scripts/gen_rsa_keys.py 生成两对密钥并按前后端配对说明配置。
+# API_DECRYPT_PUBLIC_KEY=
+# API_DECRYPT_PRIVATE_KEY=
+```
+
+相关配置：
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `API_DECRYPT_ENABLED` | `True` | 总开关；密钥无效时启动校验会自动置 False |
+| `API_DECRYPT_HEADER_FLAG` | `encrypt-key` | 协商用的请求/响应头名 |
+| `API_DECRYPT_PUBLIC_KEY` | `""` | 后端**加密响应**用（对应前端响应私钥） |
+| `API_DECRYPT_PRIVATE_KEY` | `""` | 后端**解密请求**用（对应前端请求公钥） |
+
+`env/.env.dev` 内置了一对**仅开发用**的 1024 位密钥（注释标明了配对关系），开箱可联调，**勿用于生产**。
+
+### 启动密钥校验与降级
+
+`create_app` 里 `validate_security_settings()` **先于**中间件注册执行（RSA 无效会停用中间件，须提前判定）：
+
+1. **RuoYi 出厂密钥黑名单**：prod 命中已知公开密钥 → `RuntimeError` 拒绝启动（公开密钥严禁上生产）；
+2. 任一密钥**为空** → `API_DECRYPT_ENABLED=False` + 告警，降级明文；
+3. 密钥**无效**（Base64 DER 不可加载、或长度 <1024 位）→ 同样停用 + 告警。
+
+**降级方式**是把 `API_DECRYPT_ENABLED` 置 False，随后 `ApiDecryptMiddleware` 根本不注册，全链路退化为明文——**绝不带着假密钥运行**。
+
+## 5. 前端配置
+
+前端配置在 `apps/web-antd/.env.development` / `.env.production`：
+
+| 配置项 | 含义 |
+|---|---|
+| `VITE_GLOB_ENABLE_ENCRYPT` | 前端总开关（`true`/`false`） |
+| `VITE_GLOB_RSA_PUBLIC_KEY` | 请求加密公钥（对应后端 `API_DECRYPT_PRIVATE_KEY`） |
+| `VITE_GLOB_RSA_PRIVATE_KEY` | 响应解密私钥（对应后端 `API_DECRYPT_PUBLIC_KEY`） |
+
+- `.env.development`：默认开启，用开发密钥；
+- `.env.production`：默认 `false`/空。生产启用需生成新密钥→按第 2 节配对填入→**重新构建前端镜像**（密钥是构建期注入的）。
+
+加解密实现在 `packages/utils/src/encryption/`（RSA 用 jsencrypt、AES 用 crypto-js 的 ECB/Pkcs7，与后端算法对齐，可替换为国密 sm2/sm4）。
+
+### 按请求开启（前端是逐接口显式开启的）
+
+请求拦截器（`apps/web-antd/src/utils/http/index.ts`）的加密门槛是三重判断：`enableEncrypt && config.encrypt && POST/PUT`。其中 `config.encrypt` 是**每个请求单独声明**的开关（`AxiosRequestConfig.encrypt?: boolean`，默认 `false`）。
+
+当前仅 3 个含密码的敏感接口开启：登录 `loginApi`、修改密码 `userUpdatePassword`、重置密码 `userResetPassword`。给新接口开加密，就是在该请求配置里加 `encrypt: true`。
+
+> 后端对应端点**无需改动**——加解密由中间件透明处理，端点签名直接收明文。
+
+## 6. 联调与排查
+
+| 现象 | 可能原因 | 定位 |
+|---|---|---|
+| `400 请求解密失败` | 前后端密钥不配对；AES/RSA 实现不一致 | 确认前端 `VITE_GLOB_RSA_PUBLIC_KEY` 与后端 `API_DECRYPT_PRIVATE_KEY` 是**同一对** |
+| 响应解不开 | 响应密钥对配错 | 确认后端 `API_DECRYPT_PUBLIC_KEY` 与前端 `VITE_GLOB_RSA_PRIVATE_KEY` 是同一对 |
+| 加密"没生效"，仍是明文 | 密钥为空/无效被自动停用 | 看启动日志是否有「已自动停用接口加解密（降级为明文）」 |
+| 前端拿不到 `encrypt-key` 响应头 | CORS 未暴露 | 后端 `CORS_EXPOSE_HEADERS` 已含 `encrypt-key`，自定义部署时保留 |
+| prod 启动被拒 | 用了 RuoYi 出厂公开密钥 | 用 `gen_rsa_keys.py` 重新生成 |
+| 改了密钥前端不生效 | 生产密钥是构建期注入 | 重新构建前端镜像 |
+
+**端到端自查**：浏览器 DevTools 看敏感请求——请求头有 `encrypt-key`、请求体是密文（Base64），后端日志能正常处理（说明解密成功），即为配对正确。

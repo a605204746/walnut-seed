@@ -1,0 +1,181 @@
+# 菜单与权限配置
+
+> 更新日期：2026-08-19 · 适用版本：WalnutSeed v1.0
+
+本文讲清 WalnutSeed 的权限体系：菜单/按钮/数据三层权限如何配置、前后端如何串成一条链，以及出问题怎么排查。配置前建议先通读第 1 节的全景图。
+
+## 1. 权限体系总览
+
+三层模型：**菜单（`sys_menu`）→ 角色（`sys_role`）→ 用户（`sys_user`）**，靠 `sys_role_menu`、`sys_user_role` 两张关联表连接。
+
+| 层 | 控制什么 | 载体 |
+|---|---|---|
+| 菜单/页面 | 能看到哪些菜单、能进哪些页面 | `sys_menu` 的 M/C 行 + `getRouters` 动态路由 |
+| 按钮/接口 | 能点哪些按钮、能调哪些接口 | `sys_menu` 的 F 行 `perms` + 后端 `AuthPermission` |
+| 数据（行级） | 同一页面里能看到哪些**数据行** | `sys_role.data_scope` + `Permission` 组件 |
+
+**一条完整的权限链路**（理解这条链，后面都是细节）：
+
+1. 管理员在「菜单管理」建 F 按钮行，`perms='system:user:add'`；
+2. 「角色管理」勾选菜单树 → 写入 `sys_role_menu`；角色的数据范围 → `sys_role.data_scope` / `sys_role_dept`；
+3. 「用户管理」分配角色 → `sys_user_role`；
+4. **登录时**聚合出权限集合：`menu_permission`（perms 集）、`role_permission`（role_key 集）、`menu_ids`，存进 Redis 会话（`user_session:<会话ID>`）；
+5. **每次请求**重建 `AuthSchema`，`AuthPermission` 做接口级鉴权；
+6. **行级数据**由 `Permission` 组件按角色 `data_scope` 追加 SQL 条件；
+7. **前端**登录后 `getInfo` 取 permissions 存入 `accessStore.accessCodes`，`getRouters` 驱动动态路由，按钮用 `v-access:code` 控制显隐。
+
+> 权限串约定 `模块:实体:操作`（如 `system:user:add`），受正则校验（`app/common/constant.py` 的 `PERMISSION_STRING`），不符合 `tool:build:list` 格式会被拒绝。前端按钮权限点、后端 `AuthPermission`、`sys_menu.perms` 三处**逐字一致**。
+
+## 2. 菜单配置
+
+### 2.1 sys_menu 字段与 menu_type
+
+`sys_menu` 一表承载目录/菜单/按钮三类节点，用 `menu_type` 区分：
+
+| menu_type | 含义 | 是否产生路由 | 关键字段 |
+|---|---|---|---|
+| `M` 目录 | 一级/多级分组（如"系统管理"） | 是（`Layout`/`ParentView`） | `path`、`icon` |
+| `C` 菜单 | 具体页面（如"用户管理"） | 是（`component` 指向视图） | `path`、`component`、`perms` |
+| `F` 按钮 | 权限点（如"用户新增"） | **否** | 仅 `perms` 有意义 |
+
+其他常用字段：`parent_id`（父节点，0 为顶级）、`order_num`（排序）、`visible`（0 显示 / 1 隐藏）、`status`（0 正常 / 1 停用）、`is_cache`（0 缓存 / 1 不缓存）、`is_frame`（0 外链 / 1 非外链）。
+
+**F 行的唯一作用**：其 `perms` 进入登录会话的权限集合，供后端 `AuthPermission` 和前端按钮权限消费——它不产生路由。构建菜单树的 `select_menu_tree_by_user_id` 只查 M/C 两类：
+
+```python
+conditions = [
+    MenuModel.menu_type.in_([SystemConstants.TYPE_DIR, SystemConstants.TYPE_MENU]),
+    MenuModel.status == SystemConstants.NORMAL,
+]
+if not self._is_super_admin():
+    conditions.append(MenuModel.id.in_(self.auth.menu_ids or []))  # 非超管只看授权菜单
+```
+
+### 2.2 component 与前端视图的对应
+
+C 型菜单的 `component`（如 `system/user/index`）由前端动态路由解析为视图文件（`apps/web-antd/src/router/access.ts` 用 `import.meta.glob('../views/**/*.vue')` 建映射）：
+
+```
+sys_menu.component = "system/user/index"
+        ↓
+src/views/system/user/index.vue
+```
+
+特殊取值（前端 `backMenuToVbenMenu` 会做转换）：一级目录用 `Layout`、多级目录父级用 `ParentView`、内嵌页用 `InnerLink`（配 `meta.link`）。component 写错/文件不存在时，前端回退 NotFound 组件并在控制台报「未找到对应组件」。
+
+### 2.3 两种配置方式
+
+**方式 A：管理端界面（日常推荐）**。用 admin 登录 → 系统管理 → 菜单管理，可视化增改目录/菜单/按钮、拖排序、选图标；改完即时生效（新会话），无需动代码。
+
+**方式 B：种子 SQL（随版本分发）**。编辑 `walnut-backend/app/seed/sql/mysql_data.sql`，`INSERT IGNORE` 幂等写入（参考现有 100「用户管理」与 1001~1007 按钮行的写法）。注意种子只在**数据库首次初始化**时执行，已有库要生效需手工执行 SQL 或走方式 A。
+
+## 3. 按钮权限（接口级）
+
+### 3.1 后端：AuthPermission
+
+每个非白名单接口都必须挂 `AuthPermission` 依赖（启动时 `audit_routes_auth` fail-fast 审计，漏挂直接起不来）。典型写法（用 `Annotated` 别名复用）：
+
+```python
+MenuListAuth = Annotated[AuthSchema, Depends(AuthPermission(permissions=["system:menu:list"], roles=[SUPER_ADMIN], role_mode="OR"))]
+
+@MenuRouter.get("/list", summary="获取菜单列表")
+async def list_menu(auth: MenuListAuth, db: DbSession):
+    ...
+```
+
+`AuthPermission(permissions=None, roles=None, mode="AND", role_mode="OR")` 的判定规则：
+
+- `permissions` 权限串列表，`mode="AND"` 全部满足 / `"OR"` 任一满足；
+- `roles` 角色 `role_key` 列表，`role_mode` 默认 `OR`；
+- **角色组与权限组是"先后都要通过"**（先校验角色、再校验权限），AND/OR 只作用于组内；
+- 直接放行：**超级管理员**（`user.id == 1`）或权限集合含 `"*"` / `"*:*:*"`；
+- 权限集合为空 → `NotPermissionException`；角色不满足 → `NotRoleException`。
+
+鉴权用的权限集合来自登录会话：请求进来 → 解 JWT（`sub` 是会话 ID）→ 读 Redis `user_session:<会话ID>` → 组装 `AuthSchema(permissions=menu_permission, roles=role_permission, menu_ids=...)`，同时做 clientid 一致性校验与滑动过期续期。
+
+### 3.2 前端：v-access 指令
+
+登录后 `getInfo` 返回的 permissions 存入 `accessStore.accessCodes`（持久化）。判断逻辑在 `packages/effects/access/src/use-access.ts`：
+
+```ts
+function hasAccessByCodes(codes: string[]) {
+  const userCodesSet = new Set(accessStore.accessCodes);
+  if (userCodesSet.has('*:*:*')) return true;      // 超管通配符放行
+  return codes.filter((item) => userCodesSet.has(item)).length > 0;
+}
+```
+
+模板里用 `v-access` 指令控制按钮显隐（不满足直接移除 DOM）：
+
+```vue
+<a-button v-access:code="['system:user:add']">新增</a-button>
+<a-button v-access:code="['system:user:export']">导出</a-button>
+<!-- 按角色控制用 v-access:role，对应 sys_role.role_key -->
+<a-button v-access:code="['system:menu:add']" v-access:role="['superadmin']">新增</a-button>
+```
+
+也可用 `AccessControl` 组件或 `useAccess()` 组合式函数做更细的控制（如动态菜单项、禁用态）。
+
+> ⚠️ **语义差异**：前端 `hasAccessByCodes` 是"任一命中即通过"的 OR 语义；后端 `AuthPermission` 的 `mode` 默认 AND。前端只负责"藏按钮"，**真正的拦截在后端**——即使绕过前端直连接口，没有权限照样 403。
+
+## 4. 数据权限（行级）
+
+按钮权限管"能不能调接口"，数据权限管"调了接口能看到哪些行"。
+
+### 4.1 六种数据范围
+
+`sys_role.data_scope`（`app/common/enums.py` 的 `DataScopeType`）：
+
+| 值 | 含义 | 生成的 SQL 条件 |
+|---|---|---|
+| `1` 全部 | 不过滤 | 无条件（超管等效） |
+| `2` 自定义 | 勾选的部门 | `dept列 IN (角色授权部门)` |
+| `3` 本部门 | 仅自己部门 | `dept列 == 当前用户部门` |
+| `4` 本部门及以下 | 自己部门 + 子孙部门 | `dept列 IN (本部门及子孙)` |
+| `5` 仅本人 | 只看自己创建的 | `create_by == 当前用户ID` |
+| `6` 本部门及以下或本人 | 4 与 5 的并集 | 上述两者 OR |
+
+"本部门及以下"靠 `sys_dept.ancestors`（祖级列表）+ `find_in_set` 做子孙部门子查询。
+
+### 4.2 Permission 组件（fail-closed）
+
+核心是 `app/core/permission.py` 的 `Permission` 类：
+
+```python
+Permission(model, auth, db, dept_column=None)   # dept_column 默认取 model.create_dept
+await permission.filter_query(stmt)              # 给查询追加数据范围条件
+```
+
+关键行为（**fail-closed——出错拒绝而非放行**）：
+
+- **超级管理员不过滤**；模型没有 `create_by` 字段则不过滤；
+- 依赖的业务模型（role/dept/user）导入失败 → `raise RuntimeError` 直接拒绝查询；
+- **用户无角色 → 仅本人数据**（`create_by == user.id`）；
+- 多角色的条件以 `or_()` 连接（取并集）；
+- 未知 `data_scope` 值 → 抛 `ServiceException`，兜底条件仍是"仅本人"。
+
+应用点：角色列表（`role/crud.py`）、用户列表（`user/service.py`，sys_user 按约定改用 `dept_id` 列）、部门（`dept/service.py`）。**写操作前也会校验**：`check_user_data_scope(user_id)` / `check_dept_data_scope(dept_id)` 用数据范围条件对目标计数，为 0 即抛"没有权限访问用户/部门数据！"——防止越权改他人数据。
+
+### 4.3 如何配置
+
+1. 角色管理 → 选中角色 → 修改**数据权限**（`PUT /system/role/dataScope`），选择数据范围；选「自定义」时再勾选授权部门（写入 `sys_role_dept`）；
+2. 给用户的角色生效范围后，该用户查询列表接口即自动按范围过滤；
+3. 业务模块要接入行级过滤，在自己的查询里调 `Permission(...).filter_query()`（参考 role/user 模块的用法）。
+
+> 防自我提权：非超管不允许编辑自身所属角色（`check_role_self_edit`）；分配数据范围前会用可见角色数比对，越权会抛"没有权限访问部分角色数据！"。
+
+## 5. 常见排查
+
+| 现象 | 定位思路 |
+|---|---|
+| 接口 403，但菜单可见 | 菜单（M/C）可见 ≠ 有按钮权限（F）。检查该角色的 `sys_role_menu` 是否勾了对应 F 行、`perms` 与接口 `AuthPermission` 是否一致 |
+| 菜单不出现 | ① 角色没勾该菜单；② 菜单 `status` 被停用 / `visible` 隐藏；③ C 菜单 `component` 路径与 `src/views/` 对不上（看浏览器 console「未找到对应组件」） |
+| 菜单出现但按钮没有 | 前端 `v-access:code` 的权限点不在 `accessCodes` 里 → 角色没勾对应 F 按钮 |
+| 绕过前端直连接口成功 | 正常——前端只藏按钮，安全边界在后端 `AuthPermission`；若后端也没拦住，检查该接口是否漏挂依赖（启动审计应已拦截，白名单除外） |
+| 列表数据比预期少 | 数据权限生效了：确认角色 `data_scope`（如"仅本人"只看得到自己建的）；超管不受限 |
+| 改完菜单/权限不生效 | 权限集合在**登录时**快照进 Redis 会话，需**重新登录**（或会话过期）才刷新 |
+| 启动报"路由认证审计失败" | 新接口忘挂 `AuthPermission`；确属公开接口才加进 `WHITE_API_LIST_PATH` |
+
+## 相关文档
+
+- 新增业务模块时的菜单/权限配置步骤：[从零新增一个业务模块 · 第 4 节](./new-crud-module.md#4-菜单与权限)
