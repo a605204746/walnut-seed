@@ -1,18 +1,22 @@
-# WalnutSeed 中间件编排：MySQL + Redis + SeaweedFS（供开发环境使用，配置与 walnut-backend/env/.env.dev 对齐）
+# WalnutSeed 中间件编排：MySQL + Redis + SeaweedFS（供开发环境使用，配置与两个后端的开发配置对齐：
+# walnut-backend-python/env/.env.dev 与 walnut-backend-java/src/main/resources/application-dev.yml）
 #
 # 启动：docker compose -f docker/docker-compose.middleware.yml up -d
 # 停止：docker compose -f docker/docker-compose.middleware.yml down（删除 docker/volumes 即清空数据）
 #
 # 说明：
-# - 全栈/生产部署请用同目录 docker-compose.yml（本文件只起中间件）。
+# - 全栈/生产部署请用同目录 docker-compose.yml（Python 后端）或
+#   docker-compose.java.yml（Java 后端），本文件只起中间件。
 # - 密码等共用值经 docker/.env 变量插值统一注入（与全栈编排共用同一组变量，
 #   模板见 .env.example；未创建时 ${VAR:-默认值} 兜底，开箱即用）。
 # - 中间件暴露宿主机端口：MySQL 3307 / Redis 6380 / SeaweedFS S3 API 8333 / filer UI 8888；
 #   均为非默认端口，一般不与宿主机自装的 MySQL/Redis（3306/6379）冲突；本机后端经 localhost 连接。
-# - 数据持久化在本目录 volumes/ 下（与全栈编排共用，服务名/容器名一致，可平滑切换）。
-# - 后端启动即连库执行 Alembic 迁移并播种、无重试，请等 MySQL healthy 后再启动后端。
+# - 数据持久化：MySQL/Redis 在本目录 volumes/ 下（绑定挂载）；SeaweedFS 用具名卷
+#   seaweedfs-data（其 filer LevelDB 元数据在 Windows 绑定挂载下会静默丢失，勿改回），
+#   均与全栈编排共用（服务名/容器名一致，可平滑切换）。
+# - 后端启动即连库执行迁移并播种（Python: Alembic；Java: Flyway）、无重试，请等 MySQL healthy 后再启动后端。
 
-name: walnut-seed-fastapi
+name: walnut-seed
 
 services:
   mysql:
@@ -21,7 +25,9 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-walnut123}
-      MYSQL_DATABASE: ${DB_NAME:-walnut_seed_fastapi}
+      # 仅首次初始化建库用：默认建 Python 库；Java 库 walnut_seed_java 由
+      # JDBC URL 的 createDatabaseIfNotExist=true 自动创建，不受此变量影响
+      MYSQL_DATABASE: ${DB_NAME:-walnut_seed_python}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -70,9 +76,16 @@ services:
       - "8333:8333"   # S3 API（后端走内部网络，此映射供宿主机调试）
       - "8888:8888"   # filer UI（相当于控制台）
     volumes:
-      - ./volumes/seaweedfs:/data
+      # 【必须用具名卷，勿改回绑定挂载】filer 元数据为 LevelDB，依赖 fsync/文件锁语义；
+      # Docker Desktop 的 Windows 绑定挂载下元数据会在写入约 10 分钟后静默丢失
+      # （对象变得不可读），具名卷位于 VM 内部文件系统，语义正确。
+      - seaweedfs-data:/data
     healthcheck:
       test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8888/" ]
       interval: 5s
       timeout: 3s
       retries: 20
+
+volumes:
+  # SeaweedFS 数据（卷文件 + filer 元数据）；`docker compose down -v` 才会删除
+  seaweedfs-data:

@@ -1,11 +1,13 @@
-# WalnutSeed 全栈/生产编排：中间件(include 复用) + 后端 + 前端(nginx)
+# WalnutSeed 全栈/生产编排（Python 后端）：中间件(include 复用) + 后端 + 前端(nginx)
+# （Java 全栈编排见同目录 docker-compose.java.yml，前端完全一致，仅后端实现互换；
+#   两份编排共用中间件容器名/端口，同一时刻只能跑一份，互切不丢数据）
 # （只起中间件供本机开发见 docker-compose.middleware.yml）
 #
 # 启动：docker compose -f docker/docker-compose.yml up -d --build
 # 访问：http://localhost:8010   账号 admin / admin123
 # 停止：docker compose -f docker/docker-compose.yml down
-# （中间件数据在 docker/volumes，后端数据在具名卷 backend-data；down 均不丢数据，
-#  删 docker/volumes 或加 -v 才清空）
+# （中间件数据在 docker/volumes（MySQL/Redis）与具名卷 seaweedfs-data（SeaweedFS），
+#  后台日志绑定在 docker/volumes/logs；down 不会删除日志，删目录才清空）
 #
 # 说明：
 # - mysql/redis/seaweedfs 三个中间件服务统一定义在 docker-compose.middleware.yml，
@@ -15,13 +17,12 @@
 # - 密码/密钥/端口等共用值经 docker/.env 变量插值统一注入（模板见 .env.example）。
 #   JWT_SECRET_KEY 为强制项（${VAR:?...}，缺失或留空直接启动失败，杜绝静默使用
 #   编排内固定密钥）；其余变量未设置时以 ${VAR:-默认值} 兜底，开箱即用。
-# - 数据持久化：中间件在本目录 volumes/ 下（绑定挂载）；后端运行时产物（日志/上传）
-#   用具名卷 backend-data（原因见 backend.volumes 注释）。docker compose down 均不丢
-#   数据；删 docker/volumes 或 `down -v` 即清空重来。
+# - 数据持久化：中间件在本目录 volumes/ 下（绑定挂载）；后台日志绑定到
+#   volumes/logs，docker compose down 不会删除日志；删 docker/volumes 或按需清理。
 
-# 项目名：决定 compose 分组、容器网络名（walnut-seed-fastapi_default）与具名卷前缀。
+# 项目名：决定 compose 分组、容器网络名（walnut-seed_default）与具名卷前缀。
 # 注意：修改此值会让 compose 视为新项目，旧卷不会被自动沿用。
-name: walnut-seed-fastapi
+name: walnut-seed
 
 # 中间件服务（mysql/redis/seaweedfs）定义复用，改端口/健康检查只需改中间件编排一份
 include:
@@ -29,8 +30,10 @@ include:
 
 services:
   backend:
-    build: ../walnut-backend
-    container_name: walnut-backend
+    build: ../walnut-backend-python
+    # 显式镜像名：与 Java 编排共用项目名但镜像互不覆盖，切换编排无需重新构建
+    image: walnut-seed-backend-python
+    container_name: walnut-backend-python
     restart: unless-stopped
     depends_on:
       mysql:
@@ -51,7 +54,7 @@ services:
       DATABASE_PORT: "3306"
       DATABASE_USER: root
       DATABASE_PASSWORD: ${DB_PASSWORD:-walnut123}
-      DATABASE_NAME: ${DB_NAME:-walnut_seed_fastapi}
+      DATABASE_NAME: ${DB_NAME:-walnut_seed_python}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ""
@@ -76,11 +79,10 @@ services:
       # 入口脚本先跑 Alembic 迁移再启动应用，首次启动留足时间
       start_period: 60s
     volumes:
-      # 运行时产物（日志/上传）：容器内 /data（后端代码写入仓库根的上级 data/，容器内即 /data）。
-      # 用具名卷而非 ./volumes/backend 绑定挂载：容器以非 root 用户 appuser 运行，
-      # 绑定挂载目录在 Linux 上由 compose 以 root 创建，appuser 无写权限；
-      # 具名卷首次挂载时会继承镜像内 /data 的属主（Dockerfile 已 chown 给 appuser）。
-      - backend-data:/data
+      # 日志直接挂载到 docker/volumes/logs，便于宿主机查看和采集。
+      # Linux 部署前请确保该目录对容器 uid 1000（appuser）可写：
+      # mkdir -p data/logs && chown 1000:1000 data/logs
+      - ./volumes/logs:/data/logs
 
   frontend:
     build:
@@ -96,7 +98,8 @@ services:
         condition: service_healthy
     healthcheck:
       # nginx 官方镜像自带 busybox wget，直接探测首页
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      # （用 127.0.0.1 而非 localhost：容器内 localhost 可能解析为 ::1，nginx 仅监听 IPv4 会拒连）
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -106,7 +109,3 @@ services:
       BACKEND_PORT: "${BACKEND_PORT:-8011}"
     ports:
       - "8010:80"
-
-volumes:
-  # 后端运行时数据（日志/上传），随 docker compose down 保留，down -v 才删除
-  backend-data:

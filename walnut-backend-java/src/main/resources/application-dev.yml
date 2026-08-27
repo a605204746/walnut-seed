@@ -1,0 +1,78 @@
+--- # 数据源配置
+spring:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    # 动态数据源文档 https://www.kancloud.cn/tracy5546/dynamic-datasource/content
+    dynamic:
+      # 性能分析插件(有性能损耗 不建议生产环境使用)
+      p6spy: true
+      # 设置默认的数据源或者数据源组,默认值即为 master
+      primary: master
+      # 严格模式 匹配不到数据源则报错
+      strict: true
+      datasource:
+        # 主库数据源（与 docker/docker-compose.middleware.yml 的 MySQL 对齐：宿主机端口 3307、root 账号）
+        master:
+          type: ${spring.datasource.type}
+          driverClassName: com.mysql.cj.jdbc.Driver
+          # rewriteBatchedStatements=true 批处理优化 大幅提升批量插入更新删除性能(对数据库有性能损耗 使用批量操作应考虑性能问题)
+          # createDatabaseIfNotExist=true 库不存在时自动创建（配合 Flyway 实现全自动初始化）
+          url: jdbc:mysql://localhost:3307/walnut_seed_java?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&createDatabaseIfNotExist=true
+          username: root
+          password: walnut123
+      hikari:
+        # 最大连接池数量
+        maxPoolSize: 20
+        # 最小空闲线程数量
+        minIdle: 10
+        # 配置获取连接等待超时的时间
+        connectionTimeout: 30000
+        # 校验超时时间
+        validationTimeout: 5000
+        # 空闲连接存活最大时间，默认10分钟
+        idleTimeout: 600000
+        # 此属性控制池中连接的最长生命周期，值0表示无限生命周期，默认30分钟
+        maxLifetime: 1800000
+        # 多久检查一次连接的活性
+        keepaliveTime: 30000
+
+--- # redis 单机配置(单机与集群只能开启一个另一个需要注释掉)
+# 与 docker/docker-compose.middleware.yml 的 Redis 对齐：宿主机端口 6380、无密码
+spring.data:
+  redis:
+    # 地址
+    host: localhost
+    # 端口（中间件编排宿主机侧固定 6380）
+    port: 6380
+    # 数据库索引
+    database: 0
+    # 密码：中间件编排的 Redis 无密码——此处【不要】写空值的 password: 键，
+    # YAML 空标量会被绑定为空字符串，Redisson 将发送 AUTH "" 导致连接失败；
+    # 无密码时保持该键缺失即可，需要密码时经 SPRING_DATA_REDIS_PASSWORD 环境变量注入
+    # 连接超时时间
+    timeout: 10s
+    # 是否开启ssl
+    ssl.enabled: false
+
+# redisson 配置
+redisson:
+  # redis key 根前缀（与 Python 后端 walnut-seed-python 区分，共用同一 Redis 实例时避免互相串键）
+  keyPrefix: walnut-seed-java
+  # 线程池数量
+  threads: 4
+  # Netty线程池数量
+  nettyThreads: 8
+  # 单节点配置
+  singleServerConfig:
+    # 客户端名称 不能用中文
+    clientName: walnut-seed
+    # 最小空闲连接数
+    connectionMinimumIdleSize: 8
+    # 连接池大小
+    connectionPoolSize: 32
+    # 连接空闲超时，单位：毫秒
+    idleConnectionTimeout: 10000
+    # 命令等待超时，单位：毫秒
+    timeout: 3000
+    # 发布和订阅连接池大小
+    subscriptionConnectionPoolSize: 50

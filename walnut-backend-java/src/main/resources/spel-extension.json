@@ -1,0 +1,7 @@
+{
+  "com.walnut.seed.common.redis.ratelimiter.annotation.RateLimiter@key": {
+    "method": {
+      "parameters": true
+    }
+  }
+}

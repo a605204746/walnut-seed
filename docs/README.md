@@ -1,46 +1,60 @@
 # WalnutSeed 文档
 
-> 项目文档索引。项目介绍、技术栈与快速启动见根目录 [README（中文）](../README.md) / [README（英文）](../README.en.md)，本目录聚焦「怎么在上面做开发」。
+项目文档按三条开发线组织：前端、Python 后端、Java 后端。每个目录都包含本路线所需的接口、权限、配置、部署和开发说明，进入对应目录即可开始工作。
 
-## 推荐阅读路径
+## 三条开发线
 
-- **第一次接触项目** → 根目录 README 快速开始 → [从零新增一个业务模块](./guide/new-crud-module.md)
-- **日常开发** → `guide/` 开发教程按需查阅
-- **部署上线** → `deployment/`
-- **想改框架本身** → `architecture/` 了解设计理由再动手
+### 前端
 
-## 开发教程（guide/）
+- [前端入口](./frontend/README.md)
+- [接口契约](./frontend/01-接口契约.md)
+- [权限与动态路由](./frontend/02-权限与动态路由.md)
+- [接口加解密](./frontend/03-接口加解密.md)
+- [国际化](./frontend/04-国际化.md)
 
-| 文档 | 内容 | 状态 |
-|---|---|---|
-| [从零新增一个业务模块](./guide/new-crud-module.md) | 端到端教程：五件套 → 路由注册 → 迁移 → 菜单权限 → 前端页面 → 验证 | ✅ 完整 |
-| [菜单与权限配置](./guide/menu-permission.md) | 菜单/按钮/数据三层权限的配置与排查 | ✅ 完整 |
-| [Alembic 迁移实战](./guide/alembic-migration.md) | 迁移机制、工作流演练、存量库接入、故障处理 | ✅ 完整 |
-| [接口加解密配置](./guide/api-encryption.md) | RSA+AES 混合加密原理、两对密钥配对、前后端配置与排查 | ✅ 完整 |
-| [i18n 使用](./guide/i18n.md) | Accept-Language 机制、新增消息、接入现状与边界 | ✅ 完整 |
+### Python 后端
 
-## 架构说明（architecture/）
+- [Python 后端入口](./python/README.md)
+- [快速开始](./python/01-快速开始.md)
+- [架构设计](./python/02-架构设计.md)
+- [配置说明](./python/03-配置说明.md)
+- [接口契约](./python/04-接口契约.md)
+- [权限配置](./python/05-权限配置.md)
+- [接口加解密](./python/06-接口加解密.md)
+- [国际化](./python/07-国际化.md)
+- [新增 CRUD 模块](./python/08-新增CRUD模块.md)
+- [Alembic 迁移](./python/09-数据库迁移-Alembic.md)
+- [Docker 部署](./python/10-Docker部署.md)
+- [生产上线清单](./python/11-生产上线清单.md)
 
-| 文档 | 内容 | 状态 |
-|---|---|---|
-| [整体架构](./architecture/overview.md) | 模块划分、请求生命周期、前后端契约、横切能力挂载点 | ✅ 完整 |
-| [后端设计](./architecture/backend-design.md) | 响应信封与异常映射、认证链路、中间件栈、数据层约定 | ✅ 完整 |
+### Java 后端
 
-## 部署运维（deployment/）
+- [Java 后端入口](./java/README.md)
+- [快速开始](./java/01-快速开始.md)
+- [架构设计](./java/02-架构设计.md)
+- [配置说明](./java/03-配置说明.md)
+- [接口契约](./java/04-接口契约.md)
+- [权限配置](./java/05-权限配置.md)
+- [接口加解密](./java/06-接口加解密.md)
+- [国际化](./java/07-国际化.md)
+- [新增 CRUD 模块](./java/08-新增CRUD模块.md)
+- [Flyway 迁移](./java/09-数据库迁移-Flyway.md)
+- [Docker 部署](./java/10-Docker部署.md)
+- [生产上线清单](./java/11-生产上线清单.md)
 
-| 文档 | 内容 | 状态 |
-|---|---|---|
-| [Docker 全栈部署](./deployment/docker-fullstack.md) | 编排结构、镜像构建与 nginx、配置注入、持久化与健康检查、运维操作 | ✅ 完整 |
-| [生产上线清单](./deployment/production-checklist.md) | 启动门禁、密钥与账号、网络与代理、运行参数、上线后验证 | ✅ 完整 |
+## 如何选择后端
+
+| 项目 | Python | Java |
+| --- | --- | --- |
+| Web 框架 | FastAPI | Spring Boot 3 |
+| 数据访问 | SQLAlchemy Async | MyBatis-Plus |
+| 数据迁移 | Alembic | Flyway |
+| 认证组件 | JWT + Redis 会话 | Sa-Token + JWT |
+| 启动命令 | `uv run main.py run --env dev` | `mvn spring-boot:run` |
+| 数据库 | `walnut_seed_python` | `walnut_seed_java` |
+
+前端与两套后端共享接口形状和权限命名，但后端代码、数据库、迁移脚本和运行时配置相互独立。实际项目建议只选择一套后端作为主线。
 
 ## 常见问题
 
-- [FAQ](./faq.md) —— 开发与部署中的高频问题（✅ 完整，持续补充）
-
----
-
-## 文档约定
-
-- 每篇文档头部标注**更新日期**，内容落后于代码时请同步修订或更新标注
-- 教程类文档以「可验证的终点」收尾：读者按步骤做完后能自查结果
-- 与根 README 重复的内容（端口表、命令清单）此处不再复制，直接链接
+- [FAQ](./faq.md)

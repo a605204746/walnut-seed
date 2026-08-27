@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <property name="log.path" value="${LOG_PATH:-../data/logs}"/>
+
+    <!-- 控制台彩色输出格式 -->
+    <!-- 时间(灰色) 线程(蓝色) 级别(按级别着色) 类名(黄色) 消息(默认色) -->
+    <property name="console.log.pattern"
+              value="%d{HH:mm:ss.SSS} %boldBlue([%15.15thread]) %highlight(%-5level) %boldYellow(%-40.40logger{39}) : %msg%n"/>
+
+    <!-- 文件输出格式（无颜色） -->
+    <property name="log.pattern"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"/>
+
+    <!-- 控制台输出 -->
+    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${console.log.pattern}</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 控制台日志文件（保留3天） -->
+    <appender name="file_console" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${log.path}/walnut-seed-java-console.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${log.path}/walnut-seed-java-console.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>3</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${log.pattern}</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+    </appender>
+
+    <!-- INFO 日志文件 -->
+    <appender name="file_info" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${log.path}/walnut-seed-java-info.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${log.path}/walnut-seed-java-info.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>60</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${log.pattern}</pattern>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>INFO</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- ERROR 日志文件 -->
+    <appender name="file_error" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${log.path}/walnut-seed-java-error.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${log.path}/walnut-seed-java-error.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>60</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${log.pattern}</pattern>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- INFO 异步输出 -->
+    <appender name="async_info" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>512</queueSize>
+        <appender-ref ref="file_info"/>
+    </appender>
+
+    <!-- ERROR 异步输出 -->
+    <appender name="async_error" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>512</queueSize>
+        <appender-ref ref="file_error"/>
+    </appender>
+
+    <!-- 控制台文件异步输出 -->
+    <appender name="async_console" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>512</queueSize>
+        <appender-ref ref="file_console"/>
+    </appender>
+
+    <root level="info">
+        <appender-ref ref="console"/>
+        <appender-ref ref="async_info"/>
+        <appender-ref ref="async_error"/>
+        <appender-ref ref="async_console"/>
+    </root>
+
+</configuration>

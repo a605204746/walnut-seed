@@ -1,0 +1,109 @@
+# WalnutSeed 全栈/生产编排（Java 后端）：中间件(include 复用) + 后端 + 前端(nginx)
+# （Python 全栈编排见同目录 docker-compose.yml；两者前端完全一致，仅后端实现互换。
+#   共用中间件容器名/端口，同一时刻只能跑一份：先 down 一份再 up 另一份，互切不丢数据）
+# （只起中间件供本机开发见 docker-compose.middleware.yml）
+#
+# 启动：docker compose -f docker/docker-compose.java.yml up -d --build
+# 访问：http://localhost:8010   账号 admin / admin123
+# 停止：docker compose -f docker/docker-compose.java.yml down
+# （中间件数据在 docker/volumes（MySQL/Redis）与具名卷 seaweedfs-data（SeaweedFS），
+#  后台日志绑定在 docker/volumes/logs；down 不会删除日志，删目录才清空）
+#
+# 说明：
+# - mysql/redis/seaweedfs 三个中间件服务统一定义在 docker-compose.middleware.yml，
+#   本文件经 include 引入，与 Python 编排共用（容器名/volumes 一致，不能同时起）。
+# - 仅前端暴露宿主机端口（8010），MySQL/Redis/后端在内部网络互通；
+#   中间件如需宿主机访问，端口映射见 middleware 编排（3307/6380/8333/8888）。
+# - 密码/密钥/端口等共用值经 docker/.env 变量插值统一注入（模板见 .env.example，
+#   与 Python 编排共用同一份）。JWT_SECRET_KEY 为强制项（${VAR:?...}，缺失或留空
+#   直接启动失败）；其余变量未设置时以 ${VAR:-默认值} 兜底，开箱即用。
+# - Java 配置注入走 Spring Boot 标准 relaxed-binding 环境变量（yml 内不写 ${} 占位）：
+#   SPRING_DATA_REDIS_HOST -> spring.data.redis.host，以此类推。
+# - 业务库 walnut_seed_java 由 JDBC URL 的 createDatabaseIfNotExist=true 自动创建，
+#   Flyway 启动时执行 db/migration 迁移脚本建表并播种（admin / admin123）。
+
+# 项目名：与 Python 编排一致（同一套中间件/网络/卷前缀，互切无缝）
+name: walnut-seed
+
+# 中间件服务（mysql/redis/seaweedfs）定义复用，改端口/健康检查只需改中间件编排一份
+include:
+  - docker-compose.middleware.yml
+
+services:
+  backend:
+    build: ../walnut-backend-java
+    # 显式镜像名：与 Python 编排共用项目名但镜像互不覆盖，切换编排无需重新构建
+    image: walnut-seed-backend-java
+    container_name: walnut-backend-java
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      # Spring profile：prod 关闭 p6spy、使用生产数据源骨架（连接参数经下方环境变量覆盖为容器网络地址）
+      SPRING_PROFILES_ACTIVE: prod
+      # 应用端口（Dockerfile ENTRYPOINT 以 -Dserver.port=${SERVER_PORT} 注入）
+      SERVER_PORT: "${BACKEND_PORT:-8011}"
+      # ---- 系统属性注入（经 Dockerfile ENTRYPOINT 的 ${JAVA_OPTS} 展开）----
+      # 自定义前缀配置（sa-token.* / oss.*）在此镜像中经系统属性 -D 注入最可靠
+      # （普通 SPRING_* relaxed-binding 环境变量仅对 spring.* 前缀验证生效）：
+      # - sa-token.jwt-secret-key：JWT 签名密钥，:? 缺失/为空时 compose 直接报错退出，
+      #   与 Python 编排共用 docker/.env 的 JWT_SECRET_KEY（生成命令见 .env.example）
+      # - oss.seaweedfs.*：对象存储走容器网络服务名；/upload 前缀与 Python 端一致
+      JAVA_OPTS: >-
+        -Dsa-token.jwt-secret-key=${JWT_SECRET_KEY:?请在 docker/.env 中设置 JWT_SECRET_KEY（生成命令见 .env.example）}
+        -Doss.seaweedfs.endpoint=http://seaweedfs:8333
+        -Doss.seaweedfs.public-url=/upload
+      # ---- 数据源（dynamic-datasource master，relaxed-binding 覆盖 application-prod.yml 的 localhost 默认值）----
+      # createDatabaseIfNotExist=true：库 walnut_seed_java 不存在时自动创建（首次部署零手工建库）
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL: "jdbc:mysql://mysql:3306/walnut_seed_java?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&createDatabaseIfNotExist=true"
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD: ${DB_PASSWORD:-walnut123}
+      SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      # ---- Redis（中间件编排的 Redis 未设密码，yml 默认 password 为空即免 AUTH；
+      #      注意不能传空字符串——Redisson 会据此发送 AUTH 导致连接失败。
+      #      如自建 Redis 带密码，再按需添加 SPRING_DATA_REDIS_PASSWORD=xxx）----
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+    healthcheck:
+      # /common/health/check 为存活式探针（不依赖 DB/Redis），就绪探针是 /common/health/ready
+      # （端点为兼容 Python 后端新增，见 HealthController；镜像内已安装 curl）
+      test: ["CMD", "curl", "-sf", "http://localhost:${BACKEND_PORT:-8011}/common/health/check"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # 首次启动含 Flyway 迁移/建库 + Spring 上下文，留足时间
+      start_period: 90s
+    volumes:
+      # Java 日志直接挂载到 docker/volumes/logs，文件名以 walnut-seed-java- 开头。
+      - ./volumes/logs:/walnut-backend/server/logs
+
+  frontend:
+    build:
+      context: ../walnut-frontend
+      dockerfile: scripts/deploy/Dockerfile
+      additional_contexts:
+        deploy: .
+    container_name: walnut-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        # nginx 反代目标就绪后再启动，避免启动窗口内 /prod-api/ 全 502
+        condition: service_healthy
+    healthcheck:
+      # nginx 官方镜像自带 busybox wget，直接探测首页
+      # （用 127.0.0.1 而非 localhost：容器内 localhost 可能解析为 ::1，nginx 仅监听 IPv4 会拒连）
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "${BACKEND_PORT:-8011}"
+    ports:
+      - "8010:80"

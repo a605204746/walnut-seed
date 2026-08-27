@@ -9,7 +9,7 @@
 # Docker 编排数据目录（全栈与中间件共用 volumes/）
 docker/volumes*/
 
-# ---------- Python（walnut-backend） ----------
+# ---------- Python（walnut-backend-python） ----------
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -21,7 +21,18 @@ venv/
 # uv：保留 uv.lock 以便复现构建
 # 环境配置：.env.dev 为本地开发默认值（无真实密钥），随仓库提交；
 # .env.prod 含生产敏感信息，禁止提交
-walnut-backend/env/.env.prod
+walnut-backend-python/env/.env.prod
+
+# ---------- Java（walnut-backend-java） ----------
+target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+# Maven wrapper（仓库未内置 .mvn，如启用需一并提交）
+.mvn/wrapper/maven-wrapper.jar
 
 # ---------- Node / 前端（walnut-frontend） ----------
 node_modules

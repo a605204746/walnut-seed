@@ -106,9 +106,10 @@ const logoSrc = computed(() => {
     <!-- 系统介绍 -->
     <div v-if="!authPanelCenter" class="relative hidden w-0 flex-1 lg:block">
       <div
-        class="absolute inset-0 size-full bg-background-deep dark:bg-[#070709]"
+        class="absolute inset-0 size-full bg-[#f6f1e9] dark:bg-[#0b0e13]"
       >
         <div class="login-background absolute top-0 left-0 size-full"></div>
+        <div class="slogan-grid absolute inset-0"></div>
         <div
           :key="authPanelLeft ? 'left' : authPanelRight ? 'right' : 'center'"
           class="mr-20 flex-col-center h-full"
@@ -117,18 +118,22 @@ const logoSrc = computed(() => {
             '-enter-x': authPanelRight,
           }"
         >
-          <template v-if="sloganImage">
-            <img
-              :alt="appName"
-              :src="sloganImage"
-              class="h-64 w-2/5 animate-float"
-            />
-          </template>
-          <SloganIcon v-else :alt="appName" class="h-64 w-2/5 animate-float" />
-          <div class="text-1xl mt-6 font-sans text-foreground lg:text-2xl">
+          <slot name="slogan">
+            <template v-if="sloganImage">
+              <img
+                :alt="appName"
+                :src="sloganImage"
+                class="h-64 w-2/5 animate-float"
+              />
+            </template>
+            <SloganIcon v-else :alt="appName" class="h-64 w-2/5 animate-float" />
+          </slot>
+          <div
+            class="mt-8 text-2xl font-semibold tracking-[0.06em] text-foreground lg:text-3xl"
+          >
             {{ pageTitle }}
           </div>
-          <div class="mt-2 dark:text-muted-foreground">
+          <div class="mt-3 text-sm tracking-[0.12em] dark:text-muted-foreground">
             {{ pageDescription }}
           </div>
         </div>
@@ -172,11 +177,27 @@ const logoSrc = computed(() => {
 </template>
 
 <style scoped>
+.slogan-grid {
+  background-image:
+    linear-gradient(rgba(180, 105, 46, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 105, 46, 0.05) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(75% 65% at 50% 45%, #000 30%, transparent 100%);
+}
+
+.dark {
+  .slogan-grid {
+    background-image:
+      linear-gradient(rgba(86, 216, 228, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(86, 216, 228, 0.05) 1px, transparent 1px);
+  }
+}
+
 .login-background {
   background: linear-gradient(
     154deg,
     #07070915 30%,
-    hsl(var(--primary) / 30%) 48%,
+    #b4692e29 48%,
     #07070915 64%
   );
   filter: blur(100px);
@@ -187,7 +208,7 @@ const logoSrc = computed(() => {
     background: linear-gradient(
       154deg,
       #07070915 30%,
-      hsl(var(--primary) / 20%) 48%,
+      #e8a7521f 48%,
       #07070915 64%
     );
     filter: blur(100px);

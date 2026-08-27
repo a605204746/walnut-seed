@@ -1,0 +1,254 @@
+# 开发环境配置
+server:
+  # 服务器的HTTP端口（与 Python 后端/前端代理保持一致：开发代理与 nginx 均指向 8011）
+  port: 8011
+  servlet:
+    # 应用的访问路径
+    context-path: /
+  # tomcat 配置
+  tomcat:
+    # 表单 POST 内容最大大小
+    max-http-form-post-size: 1GB
+    threads:
+      # 最大工作线程数
+      max: 256
+      # 最小空闲线程数
+      min-spare: 8
+    # 最大连接数
+    max-connections: 8192
+    # 等待队列长度（线程满后排队）
+    accept-count: 100
+
+captcha:
+  # 是否启用验证码校验
+  enable: true
+  # 验证码类型 math 数组计算 char 字符验证
+  type: math
+  # 数字验证码位数
+  numberLength: 1
+  # 字符验证码长度
+  charLength: 4
+
+# 日志配置
+logging:
+  level:
+    com.walnut.seed: @logging.level@
+    org.springframework: warn
+    org.mybatis.spring.mapper: error
+    org.apache.fury: warn
+  config: classpath:logback-plus.xml
+
+# 用户配置
+user:
+  password:
+    # 密码最大错误次数
+    maxRetryCount: 5
+    # 密码锁定时间（默认10分钟）
+    lockTime: 10
+
+# Spring配置
+spring:
+  application:
+    name: walnut-seed
+  threads:
+    # 开启虚拟线程 仅jdk21可用
+    virtual:
+      enabled: false
+  task:
+    execution:
+      thread-name-prefix: walnut-async-
+      pool:
+        # 核心线程数（默认常驻，不会超时回收）
+        core-size: 8
+        # 最大线程数（队列满后才会扩展到此值）
+        max-size: 64
+        # 任务队列容量（有界队列，防止 OOM）
+        queue-capacity: 512
+        # 非核心线程空闲存活时间
+        keep-alive: 60s
+        # 核心线程也允许超时回收
+        allow-core-thread-timeout: true
+  # 资源信息
+  messages:
+    # 国际化资源文件路径
+    basename: i18n/messages
+  profiles:
+    active: @profiles.active@
+  # Flyway 数据库版本管理：启动时自动执行 db/migration 下的迁移脚本（建表 + 初始数据）
+  flyway:
+    enabled: true
+    # 迁移脚本位置（V1__init_walnut_seed_boot.sql 包含全部表结构与初始数据）
+    locations: classpath:db/migration
+    # 连接已有表的存量库（无迁移历史表）时自动打基线并跳过 V1，不会重复建表
+    baseline-on-migrate: true
+    baseline-version: 1
+  # 文件上传
+  servlet:
+    multipart:
+      # 单个文件大小
+      max-file-size: 10MB
+      # 设置总上传的文件大小
+      max-request-size: 20MB
+  mvc:
+    # 设置静态资源路径 防止所有请求都去查静态资源
+    static-path-pattern: /static/**
+    format:
+      date-time: yyyy-MM-dd HH:mm:ss
+  jackson:
+    # 日期格式化
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      # 格式化输出
+      indent_output: false
+      # 忽略无法转换的对象
+      fail_on_empty_beans: false
+    deserialization:
+      # 允许对象忽略json中不存在的属性
+      fail_on_unknown_properties: false
+
+# Sa-Token配置
+sa-token:
+  # token名称 (同时也是cookie名称)
+  token-name: Authorization
+  # 是否允许同一账号并发登录 (为true时允许一起登录, 为false时新登录挤掉旧登录)
+  is-concurrent: true
+  # 在多人登录同一账号时，是否共用一个token (为true时所有登录共用一个token, 为false时每次登录新建一个token)
+  is-share: false
+  # jwt秘钥
+  jwt-secret-key: abcdefghijklmnopqrstuvwxyz
+  # 允许动态设置 token 有效期
+  dynamic-active-timeout: true
+  # 允许从请求参数/header 读取 token，关闭 cookie 鉴权
+  is-read-body: true
+  is-read-header: true
+  is-read-cookie: false
+  # token 前缀
+  token-prefix: "Bearer"
+
+# security配置
+security:
+  # 排除路径
+  excludes:
+    - /*.html
+    - /**/*.html
+    - /**/*.css
+    - /**/*.js
+    - /favicon.ico
+    - /error
+    - /*/api-docs
+    - /*/api-docs/**
+    # 健康检查（compose 探活，对齐 Python /common/health/*）
+    - /common/health/**
+    # 上传文件公开访问（与 Python /upload/{file_path:path} 同等的公开语义）
+    - /upload/**
+
+# MyBatisPlus配置 https://baomidou.com/reference/
+# 注：仅保留与 3.5.16 默认值不同的差异项（idType=ASSIGN_ID、逻辑删除值 1/0、
+# 字段策略 NOT_NULL、驼峰映射、mapperLocations 默认 classpath*:/mapper/**/*.xml 等均为原生默认，无需重复配置）
+mybatis-plus:
+  # 实体扫描，多个package用逗号或者分号分隔
+  typeAliasesPackage: com.walnut.seed.**.domain
+  configuration:
+    # XML 嵌套结果自动映射（默认 PARTIAL）
+    autoMappingBehavior: FULL
+    # SQL 日志交给 p6spy，关闭 MP 自身日志（默认自动选择日志实现）
+    logImpl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+# 数据加密
+mybatis-encryptor:
+  # 是否开启加密
+  enable: false
+  # 默认加密算法
+  algorithm: BASE64
+  # 编码方式 BASE64/HEX。默认BASE64
+  encode: BASE64
+  # 安全秘钥 对称算法的秘钥 如：AES，SM4
+  password:
+  # 公私钥 非对称算法的公私钥 如：SM2，RSA
+  publicKey:
+  privateKey:
+
+# api接口加密
+# 协议与 Python 后端完全一致（见 docs/java/04-接口加解密.md）：
+# 请求携带 encrypt-key 头（RSA 加密的 AES 密钥）时自动解密，未携带则明文放行。
+# 下方为仅开发环境的密钥对，与前端 apps/web-antd/.env.development 及
+# walnut-backend-python/env/.env.dev 三方配对（勿用于生产；生产经环境变量覆盖）。
+api-decrypt:
+  # 是否开启全局接口加密
+  enabled: true
+  # AES 加密头标识
+  headerFlag: encrypt-key
+  # 响应加密公钥 —— 对应前端解密私钥 VITE_GLOB_RSA_PRIVATE_KEY（响应加密当前未启用）
+  publicKey: MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCzWeB2rv0CLeABVtm9K7Ak/uOCSzeSeVYNLzaIDM5Nb84NQ22fYjSFLDnQVZCfBGFKAF5Qhy/yIziDKfewdA48+MzHm/ln8gCRiPane78G8ja4wDTx1atmkGUTgrInvUasjKFKOA2DK/ejqg4bYPiGKDarHpNoaDFd7NntkgmyiwIDAQAB
+  # 请求解密私钥 —— 对应前端加密公钥 VITE_GLOB_RSA_PUBLIC_KEY（登录等加密请求的解密端）
+  privateKey: MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAL4RtvHd74nL6iqoWdb7GHYfxbDPqeaXgdSEfCrhBBcoP4I0xPgQSoUBsYX0j+4mxOtWCK2ruMPnrFG8ZPSe0BSDmfRTqv+ssLH3TY1Mk3gPsA2RhTSoeoFK8P0ZB7AFu1qGUvojy1VZhyfmZvuAxGb7SlbXf7KXFmYQ+/LwOYGxAgMBAAECgYAmfb/my2MvLLSHXwCSoNcbVOPcIrHtmNEaEJp0tIz3g5cY70bUVbhBp04kKprbR86pOgsX4KbSRaCIDPcE8wSASUukLBx9Zd5xoo7UwunOxGtpWTgmvDmSyRXWk7OlIPAHf3DXCLhH5ObczpVtiweB75lSM/8HeaFFXRdn1N0SgQJBAPISegTGGfp1iUE5kszIRLjPMLQPOMIi97v1jnfn06f8wHy+akPFESZiEz+3cscOX/vzFPHkueYz679HthXCPx0CQQDJAUbtgwkkWKRLSWIB54+mnVFvGbUkNte+CN0V5OX/0x3UBz5ekl4tnRnK58cOyuruJk5ynuqi0/36Hk7TReSlAkAQsgWIXsFb7M9SmE3vocBbnq6VPJeFjDPZ2s3Ap1SJuXztHZTmp6jPJOR++IAKCovELLe9FzFbFymjP6bnSUZhAkAEQperPwS5lXtd8R83pR3BTUJFlYjmTJdD+tIcva42PtY6ATFMNdPzKYo7Z7ArWxehloRBH6cfbljKrUvEZI3VAkBKr+lLNtm+sDAR+9V0BaDWiL32h9sLq0sCBgopnS4tPNcLzv70ac2UGHJ4ixXbwMNOOdSEDCzifwvKofcU6rzV
+
+springdoc:
+  api-docs:
+    # 是否开启接口文档
+    enabled: true
+  info:
+    # 标题
+    title: 'WalnutSeed 接口文档'
+    # 描述
+    description: 'WalnutSeed 现代化全栈应用脚手架接口文档'
+    # 版本
+    version: '版本号: ${project.version}'
+    # 作者信息
+    contact:
+      name: deepin_sir
+  #这里定义了两个分组，可定义多个，也可以不定义
+  group-configs:
+    - group: 1.通用模块
+      packages-to-scan: com.walnut.seed.module.web
+    - group: 2.系统模块
+      packages-to-scan: com.walnut.seed.module.system
+
+# 防止XSS攻击
+xss:
+  # 过滤开关
+  enabled: true
+  # 排除链接
+  excludeUrls:
+    - /system/notice
+
+--- # Actuator 监控端点的配置项
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  endpoint:
+    health:
+      show-details: ALWAYS
+    logfile:
+      external-file: ${LOG_PATH:../data/logs}/walnut-seed-java-console.log
+
+--- # 默认/推荐使用sse推送
+sse:
+  enabled: true
+  path: /resource/sse
+
+--- # websocket
+websocket:
+  # 如果关闭 需要和前端开关一起关闭
+  enabled: false
+  # 路径
+  path: /resource/websocket
+  # 设置访问源地址
+  allowedOrigins: '*'
+
+--- # 文件存储（默认 SeaweedFS，配置 oss.type=aliyun 切换阿里云）
+oss:
+  type: seaweedfs
+  seaweedfs:
+    # S3 API 地址（开发中间件编排见 docker/docker-compose.middleware.yml）
+    endpoint: http://localhost:8333
+    # Bucket 名称（不存在时启动自动创建）
+    bucket: walnut-seed
+    # 浏览器访问的公共 URL 前缀：与 Python 后端 OSS_S3_URL_PREFIX=/upload 对齐，
+    # 存库地址形如 /upload/<key>，前端经 vite(/upload) 或 nginx(location /upload/) 代理回显
+    public-url: /upload
+    # 访问凭证可选（SeaweedFS S3 网关默认信任访问者，不配置即匿名访问）
+    #access-key-id:
+    #secret-access-key:
