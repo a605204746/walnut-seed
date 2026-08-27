@@ -11,7 +11,7 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
 
 def markdown_files() -> list[Path]:
-    return [ROOT / "README.md", ROOT / "README.en.md", *DOCS.rglob("*.md")]
+    return [ROOT / "README.md", ROOT / "README_EN.md", *DOCS.rglob("*.md")]
 
 
 def check_links(errors: list[str]) -> None:

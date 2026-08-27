@@ -9,7 +9,7 @@
 [![uv](https://img.shields.io/badge/uv-managed-DE5FE4?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-[English](./README.en.md) | **简体中文**
+[English](README_EN.md) | **简体中文**
 
 > **FastAPI / Spring Boot / Python / Java 全栈脚手架** —— 开箱即用的**后台管理系统**模板（admin scaffold / boilerplate），支持 **RBAC 权限管理、JWT 认证、接口加解密、数据库迁移、Docker 一键部署**，前端基于 **Vue3 + Vben + Ant Design Vue Next**。
 
