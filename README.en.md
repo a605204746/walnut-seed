@@ -1,7 +1,9 @@
-# Walnut-Seed-Fastapi
+# Walnut-Seed
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.138-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Java](https://img.shields.io/badge/Java-25-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Vue](https://img.shields.io/badge/Vue-3.5-42b883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![uv](https://img.shields.io/badge/uv-managed-DE5FE4?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
@@ -9,17 +11,24 @@
 
 **English** | [简体中文](./README.md)
 
-A modern full-stack application scaffold for building admin/back-office systems out of the box:
-**FastAPI (Python 3.12)** backend + **Vue 3 (Vben 5 / Ant Design Vue Next)** frontend.
+> **Full-Stack Admin Scaffold** — FastAPI (Python 3.12) / Spring Boot 3 (Java 25) + Vue 3 — a production-ready **admin dashboard boilerplate** with **RBAC, JWT auth, API encryption, database migrations, and Docker deployment** built in.
+
+A modern **full-stack application scaffold** (boilerplate / starter template) for building **admin / back-office / management systems** out of the box:
+**dual backends** — FastAPI (Python 3.12) and Spring Boot 3 (Java 25) — + **Vue 3 (Vben 5 / Ant Design Vue Next)** frontend. Both backends implement the **same API contract** (routes, response envelope, auth flow, API-encryption protocol), so the frontend switches between them without any change.
+
+Use cases: rapidly scaffolding **enterprise admin panels**, **data dashboards**, **operation platforms**, and **SaaS multi-tenant systems**. Python and Java teams can share the same frontend and pick either backend.
 
 ```
-Gitee: https://gitee.com/shendudian/walnut-seed-fastapi
+Gitee: https://gitee.com/shendudian/walnut-seed
 ```
+
+![WalnutSeed Login Page](./docs/img/img.png)
 
 ## Features
 
 Built-in infrastructure, ready for real-world admin systems:
 
+- **Dual backends, one contract** — Python (FastAPI) and Java (Spring Boot 3) implementations of the same API; same frontend, same contract, pick either per your team's stack, switch via a single compose file
 - **Unified response envelope** — `{"code", "msg", "data"}` across every endpoint
 - **Authentication & authorization** — JWT login, RBAC menu/button permissions, row-level data scopes (fail-closed)
 - **Hardening by default** — rate limiting, idempotency (anti-resubmit), API request/response encryption (RSA + AES), XSS filtering
@@ -34,7 +43,8 @@ Built-in infrastructure, ready for real-world admin systems:
 
 | Layer | Technologies |
 | --- | --- |
-| Backend | Python 3.12, FastAPI 0.138, SQLAlchemy 2.0 (async), Alembic, Redis (`redis.asyncio`), PyJWT, Loguru, Typer/Uvicorn; dependency management via **uv**; API encryption via `cryptography` (RSA + AES), optional China SM2/SM4 via `gmssl` |
+| Backend (Python) | Python 3.12, FastAPI 0.138, SQLAlchemy 2.0 (async), Alembic, Redis (`redis.asyncio`), PyJWT, Loguru, Typer/Uvicorn; dependency management via **uv**; API encryption via `cryptography` (RSA + AES), optional China SM2/SM4 via `gmssl` |
+| Backend (Java) | Java 25, Spring Boot 3.5, MyBatis-Plus, Sa-Token (JWT), Redisson, Flyway, springdoc; built with Maven (China mirror repositories baked into `pom.xml`) |
 | Frontend | Vue 3.5, Vben 5.7.0, antdv-next 1.3.0 (successor of the unmaintained ant-design-vue); pnpm 11.2.2 + turbo monorepo; Node.js `^22.18.0 \|\| ^24.0.0` |
 | Storage | MySQL 8 (the only supported database), Redis 7, SeaweedFS (S3-compatible object storage, switchable to Aliyun OSS) |
 
@@ -42,7 +52,8 @@ Built-in infrastructure, ready for real-world admin systems:
 
 In-depth tutorials and design notes live in [`docs/`](./docs/README.md) (written in Chinese):
 
-- **[Add a New Business Module from Scratch](./docs/guide/new-crud-module.md)** — the end-to-end walkthrough (five-file module → migrations → menus/permissions → frontend page)
+- **[Documentation index](./docs/README.md)** — guides split into shared, Python, Java, frontend, and deployment sections
+- **[Add a New Business Module from Scratch](./docs/python/08-新增CRUD模块.md)** — the Python end-to-end walkthrough (five-file module → migrations → menus/permissions → frontend page)
 - Development guides: menus & permissions, Alembic migrations, API encryption, i18n
 - Architecture notes and deployment runbooks
 
@@ -51,17 +62,18 @@ Start here if you are building on top of the scaffold.
 ## Project Structure
 
 ```
-walnut-seed-fastapi/
-  walnut-backend/    # Python backend (FastAPI + SQLAlchemy 2.0 async + Redis)
-  walnut-frontend/   # Vue 3 frontend monorepo (pnpm + turbo), main app in apps/web-antd/
-  docker/            # Compose stacks and container configuration
-  data/              # Runtime artifacts (not in git, auto-created): logs/, upload/
+walnut-seed/
+  walnut-backend-python/    # Python backend (FastAPI + SQLAlchemy 2.0 async + Redis)
+  walnut-backend-java/      # Java backend (Spring Boot 3 + MyBatis-Plus + Sa-Token), same contract as Python
+  walnut-frontend/          # Vue 3 frontend monorepo (pnpm + turbo), main app in apps/web-antd/
+  docker/                   # Compose stacks (Python / Java full stacks + middleware) and container configuration
+  data/                     # Runtime artifacts (not in git, auto-created): logs/, upload/
 ```
 
-### Backend Layout
+### Backend Layout (Python)
 
 ```
-walnut-backend/
+walnut-backend-python/
   main.py                  # Typer CLI (run/revision/upgrade/downgrade/stamp/current/history) + create_app
   pyproject.toml           # uv dependency and tooling configuration
   alembic.ini              # Database migration configuration
@@ -101,34 +113,58 @@ Every business sub-module under `app/api/v1/module_*` follows the same five-file
 | `model.py` | SQLAlchemy ORM models |
 | `schema.py` | Pydantic request/response models |
 
-Logs are written to `data/logs/` at the repository root (`walnut-seed.log`, daily rotation, 30-day retention).
+For local startup, logs are written under `data/logs/`; Docker binds backend logs to `docker/volumes/logs/`. Files are distinguished by filename: Python writes `walnut-seed-python.log`; Java writes `walnut-seed-java-console.log`, `walnut-seed-java-info.log`, and `walnut-seed-java-error.log` (rotated according to each backend's configuration).
+
+### Backend Layout (Java)
+
+```
+walnut-backend-java/
+  pom.xml                          # Maven build (Java 25 / Spring Boot 3.5; China mirror repos baked in)
+  Dockerfile                       # Two-stage build: Maven packaging inside the image + Liberica JDK 25 runtime
+  src/main/java/com/walnut/seed/
+    WalnutSeedApplication.java     # Boot entry point
+    common/                        # Infrastructure: response envelope / Sa-Token security / Redis (Redisson) /
+                                   # API encryption / MyBatis-Plus / OSS / SSE / XSS / rate limit & idempotency
+    module/web/                    # Auth (login/logout/register/captcha) + health checks + file endpoints
+    module/system/                 # System management (user/role/menu/dept/post/dict/config/notice/client/social)
+                                   # and monitoring (operation log / login log)
+  src/main/resources/
+    application*.yml               # Configuration (dev defaults; production overrides via environment variables)
+    db/migration/                  # Flyway migrations (schema + seed data, same baseline as the Python backend)
+```
+
+The route surface matches the Python backend: `/auth/*`, `/system/*`, `/monitor/*`, `/common/health/*`, `/common/file/*`, `/resource/sse`, `/upload/*` (root prefix — the frontend proxy strips `/api`).
 
 ## Getting Started
 
 ```bash
-git clone https://gitee.com/shendudian/walnut-seed-fastapi.git
-cd walnut-seed-fastapi
+git clone https://gitee.com/shendudian/walnut-seed.git
+cd walnut-seed
 ```
 
-Prerequisites: Docker Desktop (with Compose); for native development also `uv` (Python 3.12), Node.js `^22.18.0 || ^24.0.0` and pnpm 11.
+Prerequisites: Docker Desktop (with Compose); for native development also `uv` (Python 3.12), Node.js `^22.18.0 || ^24.0.0` and pnpm 11; running the Java backend natively additionally needs JDK 25 + Maven (Docker needs neither).
 
 ### Option A: Docker middleware + native apps (recommended for daily development)
 
 Middleware (MySQL / Redis / SeaweedFS) runs in Docker; backend and frontend run natively on your machine (smoothest hot reload, easiest debugging).
 
-Start the middleware first (MySQL `localhost:3307`, `root/walnut123`, database `walnut_seed_fastapi`; Redis `localhost:6380`; SeaweedFS S3 API `localhost:8333`, filer UI `http://localhost:8888`):
+Start the middleware first (MySQL `localhost:3307`, `root/walnut123`, databases `walnut_seed_python` / `walnut_seed_java` auto-created; Redis `localhost:6380`; SeaweedFS S3 API `localhost:8333`, filer UI `http://localhost:8888`):
 
 ```bash
 docker compose -f docker/docker-compose.middleware.yml up -d
 ```
 
-Then run the apps:
+Then run the apps (pick ONE backend — both listen on the same port 8011, so the frontend needs no changes):
 
 ```bash
-# Backend
-cd walnut-backend
+# Python backend
+cd walnut-backend-python
 uv sync
 uv run main.py run --env dev   # http://localhost:8011
+
+# or Java backend (needs JDK 25 + Maven)
+cd walnut-backend-java
+mvn spring-boot:run            # http://localhost:8011
 
 # Frontend (new terminal)
 cd walnut-frontend
@@ -136,24 +172,30 @@ pnpm install
 pnpm dev:antd                  # http://localhost:8010
 ```
 
-Connection settings live in `walnut-backend/env/.env.dev`, already pointed at the Docker middleware. The frontend dev server runs at `http://localhost:8010` and proxies `/api` to `http://localhost:8011`.
+Connection settings live in `walnut-backend-python/env/.env.dev` (Python) and `walnut-backend-java/src/main/resources/application-dev.yml` (Java), both already pointed at the Docker middleware. The frontend dev server runs at `http://localhost:8010` and proxies `/api` to `http://localhost:8011`.
 
 ### Option B: full stack in Docker (production-like)
 
 ```bash
 cp docker/.env.example docker/.env    # then set JWT_SECRET_KEY (mandatory, see below)
+
+# Python backend full stack
 docker compose -f docker/docker-compose.yml up -d --build
+
+# or Java backend full stack (identical frontend; the two stacks share the middleware —
+# stop one before starting the other)
+docker compose -f docker/docker-compose.java.yml up -d --build
 ```
 
 Open `http://localhost:8010` — initial account `admin / admin123` (**must be changed before production use**).
 
-The stack includes MySQL 8 + Redis 7 + backend + frontend (nginx). On startup the backend container runs Alembic migrations (`upgrade head`) before seeding data. All services carry restart policies and health checks; the backend container runs as a non-root user. `JWT_SECRET_KEY` must be provided in `docker/.env` (enforced with compose `:?` — startup fails hard if missing or empty).
+The stack includes MySQL 8 + Redis 7 + backend + frontend (nginx). On startup the backend container runs migrations before seeding data (Python: Alembic; Java: Flyway). All services carry restart policies and health checks. `JWT_SECRET_KEY` must be provided in `docker/.env` (enforced with compose `:?` in BOTH stacks — startup fails hard if missing or empty).
 
-> The two compose files share middleware definitions (via `include`) and use mutually exclusive ports, so **they cannot run at the same time**. Stop either with `docker compose -f <file> down`. Middleware data persists in `docker/volumes` (shared by both stacks; delete the directory to wipe); the full-stack backend's runtime data (logs, etc.) uses the named volume `backend-data` (kept by `down`, removed by `down -v`). Middleware ports are non-default (MySQL 3307 / Redis 6380), so they normally don't clash with locally installed MySQL/Redis (3306/6379).
+> The two full-stack compose files share middleware definitions (via `include`) and use mutually exclusive ports, so **they cannot run at the same time**. Stop either with `docker compose -f <file> down`. Middleware data persists in `docker/volumes` (MySQL/Redis bind mounts) and the `seaweedfs-data` named volume (SeaweedFS filer metadata silently disappears on Windows bind mounts, hence the named volume); backend logs are bind-mounted to `docker/volumes/logs` and remain after `down`. Middleware ports are non-default (MySQL 3307 / Redis 6380), so they normally don't clash with locally installed MySQL/Redis (3306/6379).
 
 ### Common Commands
 
-Backend (inside `walnut-backend/`):
+Backend (inside `walnut-backend-python/`):
 
 ```bash
 uv sync                                     # Install dependencies (including dev group)
@@ -175,6 +217,25 @@ pnpm build:antd   # Production build
 ```
 
 > When API encryption is enabled, the RSA key pairs must be paired with the backend configuration — and there are **two pairs**: the frontend request-encryption key pairs with the backend decryption key, and the backend response-encryption key pairs with the frontend decryption key. See `apps/web-antd/.env.development`.
+
+## Dual Backends (Python ↔ Java)
+
+The two backends are **two implementations of one API contract** — the frontend and deployment layers are agnostic to which one runs:
+
+| Contract surface | Parity |
+|---|---|
+| Routes | `/auth/*`, `/system/*`, `/monitor/*`, `/common/health/*`, `/common/file/*`, `/resource/sse`, `GET /upload/*` (root prefix) |
+| Envelope | `{"code": 200, "msg", "data"}`, pagination `{"rows", "total"}`; business errors at HTTP 200 + body code |
+| Auth | Same `clientId`, captcha flow, `access_token` response; `Authorization: Bearer` + `clientid` header |
+| API encryption | RSA + AES hybrid via the `encrypt-key` header; the dev key pair is shared across all three parties (frontend `.env.development`, Python `env/.env.dev`, Java `application.yml`) |
+| Seed data | Same baseline: `admin / admin123`, the pc client, full menus/roles/dicts |
+
+Differences and caveats:
+
+- **Separate databases**: Python uses `walnut_seed_python` (Alembic), Java uses `walnut_seed_java` (Flyway). Switching backends never cross-contaminates data, but **schema changes must be landed as migrations on both sides independently**
+- **Independent JWT secrets**: each backend signs with its own key (compose injects both from the shared `JWT_SECRET_KEY`); switching backends invalidates existing frontend sessions (tokens are not cross-compatible)
+- Encryption is **transparent** on both: requests carrying the `encrypt-key` header are decrypted automatically; plain requests pass through (the production frontend does not encrypt by default)
+- Choosing: Python teams pick `walnut-backend-python`, Java teams pick `walnut-backend-java`; switching at the Docker layer is just a different compose file
 
 ## API Contract
 
@@ -207,11 +268,11 @@ Note: with current SeaweedFS versions the static `-s3.config` identities don't t
 - Upload responses return URLs like `/upload/{key}` (a neutral path, renderable in any environment), streamed from object storage via `GET /upload/{key}`:
   - Local development: Vite proxies `/upload` → backend on 8011
   - Docker stack: nginx `location /upload/` → backend
-- Related configuration: the "OSS file storage" section of `walnut-backend/env/.env.example`
+- Related configuration: the "OSS file storage" section of `walnut-backend-python/env/.env.example`
 
 ## Database Migrations (Alembic)
 
-The single source of truth for the schema is the migration scripts under `walnut-backend/app/alembic/versions/` — **startup-time `create_all` is no longer used**.
+The single source of truth for the schema is the migration scripts under `walnut-backend-python/app/alembic/versions/` — **startup-time `create_all` is no longer used**.
 
 ### When migrations run
 
@@ -255,11 +316,13 @@ Principle: **deployment-level configuration lives in `docker/`, application-leve
 
 | What you want to change | Where | Notes |
 |---|---|---|
-| Local-dev backend behavior (DB connection, keys, etc.) | `walnut-backend/env/.env.dev` | Only the diffs; everything else falls back to code defaults |
-| A config item's default in any environment | `walnut-backend/app/config/setting.py` | The single source of truth; changes affect all environments |
-| Backend env vars for the Docker deployment | `backend.environment` in `docker/docker-compose.yml` | Environment variables take precedence over env files |
-| Shared values: passwords / JWT secret / backend port | `docker/.env` (template `.env.example`) | Compose variable interpolation — change once, applies everywhere |
-| Middleware port mappings / health checks / launch args | `docker/docker-compose.middleware.yml` | Shared by both stacks |
+| Local-dev Python backend behavior (DB connection, keys, etc.) | `walnut-backend-python/env/.env.dev` | Only the diffs; everything else falls back to code defaults |
+| Local-dev Java backend behavior | `walnut-backend-java/src/main/resources/application-dev.yml` | dev profile defaults |
+| A Python config item's default in any environment | `walnut-backend-python/app/config/setting.py` | The single source of truth; changes affect all environments |
+| Python backend env vars for the Docker deployment | `backend.environment` in `docker/docker-compose.yml` | Environment variables take precedence over env files |
+| Java backend env vars for the Docker deployment | `backend.environment` in `docker/docker-compose.java.yml` | Spring relaxed-binding env vars (`SPRING_*`) override the yml |
+| Shared values: passwords / JWT secret / backend port | `docker/.env` (template `.env.example`) | Compose variable interpolation — change once, applies to both stacks |
+| Middleware port mappings / health checks / launch args | `docker/docker-compose.middleware.yml` | Shared by all stacks |
 | Frontend nginx routing / proxying / HTTPS | `docker/config/nginx.conf` | Injected into the frontend image at build time via `additional_contexts`; rebuild with `--build frontend` after changes |
 | Frontend build-time vars (API URL, RSA public keys, etc.) / dev proxy | `walnut-frontend/apps/web-antd/.env.*`, `vite.config.ts` | Injected at build time / Vite dev-server proxy |
 
@@ -278,4 +341,4 @@ The Docker image does not bundle the `env/` directory (see `.dockerignore`) — 
 1. `cp docker/.env.example docker/.env`, and **set `JWT_SECRET_KEY`** (enforced with compose `:?` — startup fails if missing or empty):
    `python -c "import secrets; print(secrets.token_hex(32))"`
 2. Adjust `DB_PASSWORD` if needed (note: the MySQL password of an already-initialized volume does not change when you edit this value — run `ALTER USER` to sync it)
-3. `docker compose -f docker/docker-compose.yml up -d --build`
+3. `docker compose -f docker/docker-compose.yml up -d --build` (use `docker-compose.java.yml` for the Java backend)
