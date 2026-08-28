@@ -16,9 +16,9 @@ RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -ntp clean package -DskipTests
 
 # ==============================
-# Stage 2: 运行阶段
+# Stage 2: 运行阶段（与构建阶段共用 eclipse-temurin 基础镜像，确保国内镜像源可达）
 # ==============================
-FROM bellsoft/liberica-openjdk-rocky:25.0.4-cds
+FROM eclipse-temurin:25-jdk
 
 # 统一运行时目录：日志与临时文件均位于 /walnut-backend/server 下
 # 日志目录经 compose 绑定挂载到宿主机 docker/volumes/logs（见 docker-compose 中 backend.volumes 注释）
