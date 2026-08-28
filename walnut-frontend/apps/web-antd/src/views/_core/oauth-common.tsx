@@ -26,7 +26,7 @@ export interface ListItem {
 
 /**
  * @description: 绑定账号
- * @param source 来源 如gitee github 与后端的social-callback?source=xxx对应
+ * @param source 来源 如github wechat 与后端的social-callback?source=xxx对应
  * @param bound 是否已经绑定
  */
 export interface BindItem extends ListItem {
@@ -63,17 +63,6 @@ export async function handleAuthBinding(source: string) {
  * 添加账号绑定只需要在这里增加即可
  */
 export const accountBindList: BindItem[] = [
-  {
-    avatar: (
-      <span
-        class={cn('icon-[simple-icons--gitee]', 'size-6')}
-        style={{ color: '#c71d23' }}
-      />
-    ),
-    description: '绑定Gitee账号',
-    source: 'gitee',
-    title: 'Gitee',
-  },
   {
     avatar: (
       <span class={cn('icon-[fa--github-alt]', 'text-[#333]', 'size-6')} />

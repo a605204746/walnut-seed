@@ -58,7 +58,7 @@ export const overridesPreferences = defineOverridesPreferences({
      * 版权信息展示 WalnutSeed 品牌，替换 vben 默认
      */
     companyName: 'WalnutSeed',
-    companySiteLink: 'https://gitee.com/shendudian/walnut-seed',
+    companySiteLink: 'https://github.com/a605204746/walnut-seed',
     date: '2026',
   },
   footer: {

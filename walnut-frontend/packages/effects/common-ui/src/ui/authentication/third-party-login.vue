@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { GiteeIcon, MdiGithub, MdiQqchat, MdiWechat } from '@vben/icons';
+import { MdiGithub, MdiQqchat, MdiWechat } from '@vben/icons';
 import { $t } from '@vben/locales';
 
 import { VbenIconButton } from '@vben-core/shadcn-ui';
@@ -35,9 +35,6 @@ defineEmits<{
       </VbenIconButton>
       <VbenIconButton class="mb-3" @click="$emit('oauthLogin', 'github')">
         <MdiGithub class="size-[24px]" />
-      </VbenIconButton>
-      <VbenIconButton class="mb-3" @click="$emit('oauthLogin', 'gitee')">
-        <GiteeIcon class="size-[24px] text-red-700" />
       </VbenIconButton>
     </div>
   </div>
