@@ -23,6 +23,11 @@ services:
     image: mysql:8.0
     container_name: walnut-mysql
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-walnut123}
       # 仅首次初始化建库用：默认建 Python 库；Java 库 walnut_seed_java 由
@@ -41,6 +46,8 @@ services:
       # socket ping会提前通过但TCP未就绪，导致后端先于数据库就绪而启动
       test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_PASSWORD:-walnut123}" ]
       interval: 5s
+      # start_period 内用 2s 密集探测：initdb 完成后尽快翻转 healthy，缩短后端门禁等待
+      start_interval: 2s
       timeout: 3s
       retries: 20
       start_period: 30s
@@ -49,6 +56,11 @@ services:
     image: redis:7-alpine
     container_name: walnut-redis
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "6380:6379"
     volumes:
@@ -56,8 +68,11 @@ services:
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
+      # start_interval 需搭配 start_period（启动密集探测 + 失败不计数窗口）
+      start_interval: 2s
       timeout: 3s
       retries: 20
+      start_period: 10s
 
   seaweedfs:
     # 固定版本，不用 latest：避免上游静默变更（含不兼容/行为变化）导致部署不可复现。
@@ -68,6 +83,11 @@ services:
     image: chrislusf/seaweedfs:4.41
     container_name: walnut-seaweedfs
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     # 单容器 all-in-one：master + volume + filer + S3 网关。
     # 注意：当前版本静态 -s3.config 身份不生效（上游 #4728/#8331），网关默认信任访问者，
     # 仅暴露在内网/宿主机调试端口；如需严格鉴权请置于防火墙/代理之后或锁旧版本。
@@ -83,8 +103,11 @@ services:
     healthcheck:
       test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8888/" ]
       interval: 5s
+      # start_interval 需搭配 start_period（启动密集探测 + 失败不计数窗口）
+      start_interval: 2s
       timeout: 3s
       retries: 20
+      start_period: 10s
 
 volumes:
   # SeaweedFS 数据（卷文件 + filer 元数据）；`docker compose down -v` 才会删除

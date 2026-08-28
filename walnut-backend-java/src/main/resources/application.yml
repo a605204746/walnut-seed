@@ -2,6 +2,10 @@
 server:
   # 服务器的HTTP端口（与 Python 后端/前端代理保持一致：开发代理与 nginx 均指向 8011）
   port: 8011
+  # 优雅停机：SIGTERM 后停止接收新请求，等待在途请求完成再关闭
+  # （上限为 spring.lifecycle.timeout-per-shutdown-phase，默认 30s；
+  #   配合 compose 的 stop_grace_period，保证宽限期大于应用收尾时间）
+  shutdown: graceful
   servlet:
     # 应用的访问路径
     context-path: /

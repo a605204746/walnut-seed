@@ -36,6 +36,9 @@ services:
     image: walnut-seed-backend-java
     container_name: walnut-backend-java
     restart: unless-stopped
+    # 优雅停机：server.shutdown=graceful 下 Spring 最多等 30s（lifecycle 默认值）收尾在途请求，
+    # compose 默认 10s 宽限期会中途杀掉，放宽到 35s 保证宽限期 > 应用收尾时间
+    stop_grace_period: 35s
     depends_on:
       mysql:
         condition: service_healthy
@@ -70,16 +73,28 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
     healthcheck:
-      # /common/health/check 为存活式探针（不依赖 DB/Redis），就绪探针是 /common/health/ready
-      # （端点为兼容 Python 后端新增，见 HealthController；镜像内已安装 curl）
-      test: ["CMD", "curl", "-sf", "http://localhost:${BACKEND_PORT:-8011}/common/health/check"]
+      # 就绪探针 /common/health/ready：DB + Redis 均就绪才 200，否则 503（存活式探针是 /check，
+      # 不依赖 DB/Redis）。编排门禁语义是"可对外服务"，用 ready 才能避免后端带着未初始化的
+      # 依赖被标记健康、前端随即放流量。
+      # 运行镜像为 alpine（无 bash），busybox wget 对 5xx 返回非零即失败，正好区分 200/503
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${BACKEND_PORT:-8011}/common/health/ready"]
       interval: 10s
+      # start_period 内用 2s 密集探测：就绪后 ~2s 即翻转 healthy，前端门禁少等一个常规周期
+      start_interval: 2s
       timeout: 5s
       retries: 10
       # 首次启动含 Flyway 迁移/建库 + Spring 上下文，留足时间
-      start_period: 90s
+      start_period: 30s
+    # stdout 日志（docker logs）轮转上限：文件日志另有 logback 按天轮转，两者互不影响
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       # Java 日志直接挂载到 docker/volumes/logs，文件名以 walnut-seed-java- 开头。
+      # 容器以 appuser（uid 1000）运行：Linux 部署前请确保该目录对 uid 1000 可写
+      # （mkdir -p docker/volumes/logs && chown -R 1000:1000 docker/volumes/logs）
       - ./volumes/logs:/walnut-backend/server/logs
 
   frontend:
@@ -99,9 +114,15 @@ services:
       # （用 127.0.0.1 而非 localhost：容器内 localhost 可能解析为 ::1，nginx 仅监听 IPv4 会拒连）
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 10s
+      start_interval: 2s
       timeout: 5s
       retries: 6
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       BACKEND_HOST: backend
       BACKEND_PORT: "${BACKEND_PORT:-8011}"

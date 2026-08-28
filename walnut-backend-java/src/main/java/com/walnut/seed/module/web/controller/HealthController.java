@@ -25,7 +25,7 @@ import java.time.format.DateTimeFormatter;
  * 与 Python 后端 /common/health/* 完全对齐（见
  * walnut-backend-python/app/api/v1/module_common/health/controller.py）：
  * check/live 为存活式探针（不依赖 DB/Redis），ready 为就绪探针（DB + Redis），
- * compose 编排以 /common/health/check 作为后端探活地址。
+ * compose 编排以 /common/health/ready 作为后端就绪门禁（就绪后才放行前端）。
  *
  * @author deepin_sir
  */
@@ -42,7 +42,7 @@ public class HealthController {
     private final RedissonClient redissonClient;
 
     /**
-     * 通用健康检查（compose healthcheck 探活地址），不依赖 DB/Redis
+     * 通用健康检查（存活式，不依赖 DB/Redis）
      */
     @GetMapping("/check")
     public ApiResponse<HealthOut> check() {

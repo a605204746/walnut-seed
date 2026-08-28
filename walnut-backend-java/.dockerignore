@@ -1,0 +1,7 @@
+# 本地构建产物（mvn package 后 target/ 含 ~300MB fat jar，进构建上下文会拖慢每次构建）
+target/
+# IDE / 本机杂项
+.idea/
+*.iml
+.vscode/
+.git/

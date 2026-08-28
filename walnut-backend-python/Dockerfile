@@ -1,5 +1,4 @@
 # 后端镜像：两阶段构建（builder 装依赖 → 运行层只留 venv+代码，不含 uv/uvx）
-# 开发形态（源码挂载+热重载）见 Dockerfile.dev
 
 # ==============================
 # Stage 1: 依赖构建（uv 按 uv.lock 冻结安装生产依赖）
@@ -14,8 +13,9 @@ WORKDIR /app
 # 先装生产依赖（利用层缓存，代码变更不触发重装）
 COPY pyproject.toml uv.lock ./
 # 缓存挂载：wheel 缓存留在镜像层外，重建更快、层更小
+# --compile-bytecode：安装期预编译 .pyc，容器重建后首次 import 免现场编译
 RUN --mount=type=cache,id=uv,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    uv sync --frozen --no-dev --no-install-project --compile-bytecode
 
 # ==============================
 # Stage 2: 运行层（python + venv + 代码，无 uv；非 root 运行）

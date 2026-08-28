@@ -76,13 +76,13 @@ exec "$@"                                # 交棒给 CMD：python main.py run --
 `walnut-backend-java/Dockerfile` 两阶段：
 
 - **builder 阶段**：`maven:3.9-eclipse-temurin-25` 内直接 `mvn package`（依赖仓库镜像已内置于 `pom.xml`，无需外挂 settings；`--mount=type=cache` 缓存 `.m2`）；
-- **运行阶段**：`bellsoft/liberica-openjdk-rocky:25`（JDK 25），`microdnf` 安装 curl 供 healthcheck；`ENTRYPOINT` 以 `-Dserver.port=${SERVER_PORT}` 注入端口，`JAVA_OPTS`/`JVM_GC`（默认 ZGC）可经 compose 覆盖。
+- **运行阶段**：`eclipse-temurin:25-jre-alpine`（musl 变体，比 noble 系 jre 再小约 170MB，镜像总量 843MB 降至 563MB），以非 root 的 `appuser`（uid 1000）运行；`ENTRYPOINT` 以 `-Dserver.port=${SERVER_PORT}` 注入端口，`JAVA_OPTS`/`JVM_GC`（默认 ZGC）可经 compose 覆盖，OOM heap dump 落在挂载的日志目录。
 
-与 Python 镜像的差异：**迁移不靠入口脚本**——Spring Boot 启动时 Flyway 自动执行 `db/migration` 建表播种（`createDatabaseIfNotExist=true` 自动建库），因此 compose `start_period` 放宽到 90s。
+与 Python 镜像的差异：**迁移不靠入口脚本**——Spring Boot 启动时 Flyway 自动执行 `db/migration` 建表播种（`createDatabaseIfNotExist=true` 自动建库），因此 compose `start_period` 为 30s。
 
 ### 2.2 前端：构建产物 + nginx 模板
 
-`walnut-frontend/scripts/deploy/Dockerfile` 两阶段：node:22 里 `pnpm install --frozen-lockfile` + `pnpm run build:antd`（产物在 `apps/web-antd/dist`），再拷进 `nginx:stable-alpine`。
+`walnut-frontend/scripts/deploy/Dockerfile` 两阶段：node:22 里先只拷 workspace manifests（含 `.npmrc`）执行 `pnpm install --frozen-lockfile --ignore-scripts`（依赖清单层缓存：业务源码变更不重装依赖；内部包改由 `build:antd` 时 turbo `^build` 流水线按需构建），再全量拷源码 `pnpm run build:antd`（产物在 `apps/web-antd/dist`），最后拷进 `nginx:stable-alpine`。
 
 nginx 配置经 `additional_contexts` 注入：compose 里 `additional_contexts: { deploy: . }`（`.` 即 `docker/` 目录），Dockerfile 用 `COPY --from=deploy config/nginx.conf` 取 `docker/config/nginx.conf` 作为**模板**，启动时 `envsubst` 只替换 `${BACKEND_HOST} ${BACKEND_PORT}` 两个变量（显式限定，避免误伤 nginx 内置 `$uri` 等变量）后生成最终配置。
 
@@ -126,13 +126,13 @@ nginx 配置经 `additional_contexts` 注入：compose 里 `additional_contexts:
 | backend（Java） | `./volumes/logs:/walnut-backend/server/logs` | **宿主机绑定挂载**（仅日志） |
 
 **SeaweedFS 为什么用具名卷而非绑定挂载**：其 filer 元数据是 LevelDB，依赖 fsync/文件锁语义；在 Docker Desktop 的 Windows 绑定挂载下，上传的对象元数据会在写入约 10 分钟后**静默丢失**（对象变得不可读）。具名卷位于 Docker VM 内部文件系统，语义正确。
-**日志目录权限**：Java 容器以 root 用户运行；Python 编排若同时使用，请确保 `docker/volumes/logs` 对 uid 1000 可写。
+**日志目录权限**：两个后端容器均以 `appuser`（uid 1000）运行；Linux 部署前请确保 `docker/volumes/logs` 对 uid 1000 可写（`mkdir -p docker/volumes/logs && chown -R 1000:1000 docker/volumes/logs`）。
 
 ### 健康检查要点
 
 - **mysql 探活用 `127.0.0.1` 而非 `localhost`**：mysql 镜像首次初始化时临时开启 `--skip-networking`，`localhost` 走 unix socket 会提前通过而 TCP 未就绪，导致后端先于数据库就绪而启动（后端连库执行迁移无重试，会直接失败）；
-- **backend（Python）用 python urllib** 探 `/common/health/check`（slim 镜像无 curl/wget）：该端点是**存活式探针**（不依赖 DB/Redis），就绪探针是 `/common/health/ready`（并发 `SELECT 1` + `redis.ping()`，任一失败 503）；`start_period: 60s` 为入口脚本的 Alembic 迁移留时间。两个探针路径都在免认证白名单里，无需 token。
-- **backend（Java）用 curl** 探同一组 `/common/health/*` 端点（Java 端为对齐契约新增的 `HealthController`，路径/语义与 Python 完全一致）；`start_period: 90s` 覆盖 Flyway 建库建表 + Spring 上下文。
+- **backend 就绪门禁探 `/common/health/ready`**：该端点是**就绪探针**（并发 `SELECT 1` + `redis.ping()`，任一失败 503），作为 compose 门禁可避免后端带着未初始化依赖被标记健康、前端随即放流量；存活式探针是 `/common/health/check`（不依赖 DB/Redis）。探针实现随镜像底座选择：Python（slim，无 curl/wget）用 bash `/dev/tcp` 发原始 HTTP 请求，Java（alpine，无 bash）用自带 busybox wget（对 5xx 返回非零）。`start_period`：Python 60s 为入口脚本的 Alembic 迁移留时间，Java 30s 覆盖 Flyway 建库建表 + Spring 上下文。两个探针路径都在免认证白名单里，无需 token。
+- **backend（Java）**：端点为对齐契约新增的 `HealthController`（路径/语义与 Python 完全一致）；`server.shutdown: graceful` + compose `stop_grace_period: 35s` 优雅停机，`start_interval: 2s` 密集探测缩短就绪翻转延迟。
 
 **启动时序**：mysql healthy（TCP 就绪）→ backend 容器启动 → 迁移（Python: entrypoint Alembic；Java: Flyway 自动）→ 应用启动并幂等播种（`admin/admin123` 来源）→ backend healthcheck 通过 → frontend 启动。
 

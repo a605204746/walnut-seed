@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ==============================
 # Stage 1: 构建阶段
 # ==============================
@@ -18,13 +19,37 @@ RUN npm i -g corepack
 
 WORKDIR /app
 
-# 复制项目文件
-COPY . .
+# 依赖清单先行：只拷 workspace manifests（含 .npmrc 的 npmmirror 源），业务源码变更时
+# 命中层缓存、跳过 pnpm install 整层。--parents 保留相对路径（Dockerfile 1.7+ 语法），
+# 新增 workspace 包时需同步补对应 glob。
+COPY --parents \
+    package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc \
+    apps/*/package.json \
+    internal/*/package.json \
+    internal/lint-configs/*/package.json \
+    packages/*/package.json \
+    packages/@core/*/package.json \
+    packages/@core/base/*/package.json \
+    packages/@core/ui-kit/*/package.json \
+    packages/effects/*/package.json \
+    scripts/*/package.json \
+    ./
 
 # 安装依赖
 # --frozen-lockfile: 确保使用 lock 文件中的版本
 # --mount=type=cache: 缓存 pnpm 存储，加速后续构建
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+# --ignore-scripts: 跳过根 postinstall 的全量 stub 构建（本层只有 manifests 没有源码，跑了必失败；
+#   stub 移至源码拷贝后单独执行，见下方）
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts
+
+# 复制项目文件（依赖层之后，仅业务源码变更影响本层起）
+COPY . .
+
+# 预构建内部包（stub）：turbo ^build 只调度 dependencies，而 @vben/vite-config 这类
+# devDependency 的产物（exports 指向 dist/）不被其覆盖，须在此先行构建。
+# （原先由 postinstall 完成；移到这里以保住上面的 install 层缓存）
+RUN pnpm -r run --if-present stub
 
 # 构建 web-antd 应用
 # web-antd 只有 build:prod 脚本（没有 build），根脚本 build:antd 等价于
