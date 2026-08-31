@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     # ================================================= #
     CAPTCHA_ENABLE: bool = True
     CAPTCHA_TYPE: str = "math"  # math | char
-    CAPTCHA_NUMBER_LENGTH: int = 2  # math 模式运算数位数（1 位答案空间仅 19 种，2 位起才可防暴力猜解）
+    CAPTCHA_NUMBER_LENGTH: int = 1  # math 模式运算数位数（1 位答案空间仅 19 种，抗暴力猜解较弱；调回 2 可增强）
     CAPTCHA_CHAR_LENGTH: int = 4
     CAPTCHA_EXPIRE_SECONDS: int = 120  # 验证码有效期（2 分钟）
 
